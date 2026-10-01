@@ -90,12 +90,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
-          CODE=$(curl -sS -o project.json -w "%{http_code}"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$API/$PAGES_PROJECT")
+          CODE=$(curl -sS -o project.json -w "%{http_code}" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API/$PAGES_PROJECT")
           if [ "$CODE" = "404" ]; then
-            curl -fsS "$API"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "{"name":"$PAGES_PROJECT","production_branch":"main"}" > project.json
+            node -e 'require("fs").writeFileSync("project-payload.json",JSON.stringify({name:process.env.PAGES_PROJECT,production_branch:"main"}))'
+            CREATE_CODE=$(curl -sS -o project.json -w "%{http_code}" -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data-binary @project-payload.json "$API")
+            if [ "$CREATE_CODE" != "200" ]; then
+              cat project.json
+              echo "::error::Unable to create Pages project (HTTP $CREATE_CODE). The API token must include Pages Write."
+              exit 1
+            fi
           elif [ "$CODE" != "200" ]; then
             cat project.json
-            echo "::error::Unable to read/create Pages project (HTTP $CODE). API token needs Pages Write."
+            echo "::error::Unable to read Pages project (HTTP $CODE)."
             exit 1
           fi
           SUCCESS=$(node -e 'const x=require("./project.json"); process.stdout.write(String(x.success!==false))')
@@ -128,7 +134,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx --yes wrangler@4.143.0 pages deploy public             --project-name "$PAGES_PROJECT"             --branch main             --commit-hash "$GITHUB_SHA"             --commit-dirty=false             --config wrangler.pages.deploy.json
+          npx --yes wrangler@4.143.0 pages deploy public --project-name "$PAGES_PROJECT" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false --config wrangler.pages.deploy.json
 
       - name: Attach external-DNS custom subdomain
         id: domain
@@ -138,12 +144,18 @@ jobs:
           PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
           API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT/domains"
-          CODE=$(curl -sS -o domain.json -w "%{http_code}"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$API/$CUSTOM_DOMAIN")
+          CODE=$(curl -sS -o domain.json -w "%{http_code}" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API/$CUSTOM_DOMAIN")
           if [ "$CODE" = "404" ]; then
-            curl -fsS "$API"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "{"name":"$CUSTOM_DOMAIN"}" > domain.json
+            node -e 'require("fs").writeFileSync("domain-payload.json",JSON.stringify({name:process.env.CUSTOM_DOMAIN}))'
+            CREATE_CODE=$(curl -sS -o domain.json -w "%{http_code}" -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data-binary @domain-payload.json "$API")
+            if [ "$CREATE_CODE" != "200" ]; then
+              cat domain.json
+              echo "::error::Unable to attach Pages custom domain (HTTP $CREATE_CODE)."
+              exit 1
+            fi
           elif [ "$CODE" != "200" ]; then
             cat domain.json
-            echo "::error::Unable to attach Pages custom domain (HTTP $CODE)."
+            echo "::error::Unable to read Pages custom domain (HTTP $CODE)."
             exit 1
           fi
           STATUS=$(node -e 'const x=require("./domain.json"); const r=x.result||x; process.stdout.write(r.status||"unknown")')
@@ -154,5 +166,5 @@ jobs:
             echo "- Pages: https://$PAGES_TARGET"
             echo "- Custom domain: https://$CUSTOM_DOMAIN"
             echo "- Domain status: $STATUS"
-            echo "- DNS to add at the current DNS provider: CNAME booking -> $PAGES_TARGET"
+            echo "- DNS: CNAME booking -> $PAGES_TARGET"
           } >> "$GITHUB_STEP_SUMMARY"
