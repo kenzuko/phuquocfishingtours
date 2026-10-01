@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#f7faf5">
+  <title>Your Fishing Trip - JoTrip</title>
+  <link rel="stylesheet" href="/trip.css">
+</head>
+<body>
+  <main class="trip-shell">
+    <header class="trip-header">
+      <img src="/assets/jotrip-logo.png" alt="JoTrip">
+      <div><span id="trip-code">Loading...</span><small>Phu Quoc Fishing Tours</small></div>
+    </header>
+
+    <section class="trip-hero">
+      <img src="/assets/island-real.jpg" alt="Phu Quoc island">
+      <div class="hero-overlay"></div>
+      <div class="hero-copy">
+        <span>YOUR TRIP WITH JOTRIP</span>
+        <h1>Your Fishing Trip</h1>
+        <p id="hero-date">Loading trip details...</p>
+        <strong id="hero-tour">Private Fishing Tour</strong>
+      </div>
+    </section>
+
+    <div id="trip-loading" class="state-box">Loading your trip...</div>
+    <div id="trip-error" class="state-box error hidden"></div>
+
+    <div id="trip-content" class="hidden">
+      <section id="cancel-banner" class="cancel-banner hidden">This trip has been cancelled. Please contact JoTrip for the latest arrangement.</section>
+
+      <section class="progress-card">
+        <div class="progress-step" id="step-booking"><span>1</span><div><strong>Booking confirmed</strong><small>Your trip is in our system.</small></div></div>
+        <div class="progress-line"></div>
+        <div class="progress-step" id="step-boat"><span>2</span><div><strong>Boat arranged</strong><small>Your fishing operation is assigned.</small></div></div>
+        <div class="progress-line"></div>
+        <div class="progress-step" id="step-driver"><span>3</span><div><strong>Driver details</strong><small>Pickup details will appear here.</small></div></div>
+        <div class="progress-line"></div>
+        <div class="progress-step" id="step-ready"><span>4</span><div><strong>Ready for pickup</strong><small>Everything is ready to go.</small></div></div>
+      </section>
+
+      <section class="trip-grid">
+        <article class="info-card pickup-card">
+          <div class="icon">⌖</div>
+          <div><small>PICKUP</small><strong id="pickup-time">-</strong><p id="pickup-location">-</p></div>
+        </article>
+        <article class="info-card">
+          <div class="icon">⚓</div>
+          <div><small>TRIP</small><strong id="trip-time">-</strong><p><span id="guest-count">-</span> guests</p></div>
+        </article>
+        <article class="info-card">
+          <div class="icon">◎</div>
+          <div><small>TOTAL</small><strong id="trip-total">-</strong><p id="payment-method">-</p></div>
+        </article>
+      </section>
+
+      <section class="content-card">
+        <div class="section-label">INCLUDED IN YOUR TRIP</div>
+        <div id="inclusions" class="inclusions"></div>
+      </section>
+
+      <section class="two-col">
+        <article class="content-card" id="driver-card">
+          <div class="section-label">YOUR DRIVER</div>
+          <div id="driver-content" class="driver-content"></div>
+        </article>
+        <article class="content-card weather-card">
+          <div class="section-label">TRIP WEATHER</div>
+          <div class="weather-head"><span id="weather-icon">☀</span><strong id="weather-label">Weather check scheduled</strong></div>
+          <p id="weather-detail">A final operating check will be made before your trip.</p>
+          <small>Weather decisions are reviewed by JoTrip before departure.</small>
+        </article>
+      </section>
+
+      <section id="special-card" class="content-card special-card hidden">
+        <div class="section-label">SPECIAL REQUEST</div>
+        <p id="special-request"></p>
+      </section>
+
+      <section class="help-card">
+        <div class="help-icon">◎</div>
+        <div><strong>Need help?</strong><p>Contact JoTrip through the same chat or phone channel used for your booking.</p></div>
+      </section>
+
+      <footer>
+        <img src="/assets/jotrip-logo.png" alt="JoTrip">
+        <p>Just one click away</p>
+        <small>Trip information updates automatically when our operations team makes changes.</small>
+      </footer>
+    </div>
+  </main>
+  <script type="module" src="/trip.js"></script>
+</body>
+</html>

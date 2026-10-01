@@ -61,6 +61,17 @@ jobs:
           fi
           echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch JoTrip visual assets from Google Drive
+        run: |
+          mkdir -p public/assets
+          curl -fL --retry 3 --retry-delay 2 "https://drive.google.com/uc?export=download&id=1aE5Ywq2taDkSDppjFFXPFNqDOqF47ond" -o public/assets/jotrip-logo.png
+          curl -fL --retry 3 --retry-delay 2 "https://drive.google.com/uc?export=download&id=1ArXduel7S_nmYoXyUDKiwo4bH70lI5bO" -o public/assets/boat-real.jpg
+          curl -fL --retry 3 --retry-delay 2 "https://drive.google.com/uc?export=download&id=1ZKk6C4v-ynKGGit7P1Kzie_Q85nujG-c" -o public/assets/island-real.jpg
+          test -s public/assets/jotrip-logo.png
+          test -s public/assets/boat-real.jpg
+          test -s public/assets/island-real.jpg
+          echo "Downloaded JoTrip logo + real Phu Quoc photos from owned Drive assets."
+
       - name: Build Pages Function and config
         env:
           DB_ID: ${{ steps.d1.outputs.database_id }}
@@ -161,6 +172,12 @@ jobs:
           test "$ROOT_CODE" = "200" || { echo "::error::App shell failed"; exit 1; }
           grep -q "Fishing Desk" app.html || { echo "::error::App shell content missing"; exit 1; }
 
+          LOGO_CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/assets/jotrip-logo.png")
+          BOAT_CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/assets/boat-real.jpg")
+          ISLAND_CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/assets/island-real.jpg")
+          echo "visual_assets_http=$LOGO_CODE/$BOAT_CODE/$ISLAND_CODE"
+          test "$LOGO_CODE" = "200" -a "$BOAT_CODE" = "200" -a "$ISLAND_CODE" = "200" || { echo "::error::Visual assets failed"; exit 1; }
+
           DASH_CODE=$(curl -sS -o dashboard.json -w "%{http_code}" -b cookies.txt "$BASE/api/v1/dashboard")
           echo "pages_dashboard_http=$DASH_CODE"
           test "$DASH_CODE" = "200" || { echo "::error::Dashboard query failed"; cat dashboard.json; exit 1; }
@@ -175,6 +192,7 @@ jobs:
             echo "- Pages auth HTTP: $AUTH_CODE"
             echo "- Pages health HTTP: $HEALTH_CODE"
             echo "- Pages app HTTP: $ROOT_CODE"
+            echo "- Visual assets HTTP: $LOGO_CODE/$BOAT_CODE/$ISLAND_CODE"
             echo "- Pages dashboard HTTP: $DASH_CODE"
             echo "- Custom domain HTTP: $CUSTOM_CODE"
           } >> "$GITHUB_STEP_SUMMARY"
