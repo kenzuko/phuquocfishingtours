@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Fishing Desk - JoTrip</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand">Fishing <span>Desk</span></div>
+      <nav>
+        <button data-view="dispatch" class="nav active">Điều hành</button>
+        <button data-view="new" class="nav">Tạo booking</button>
+        <button data-view="search" class="nav">Tra cứu</button>
+        <button data-view="contacts" class="nav">Đối tác & tài xế</button>
+      </nav>
+      <form method="post" action="/auth/logout" class="logout"><button>Đăng xuất</button></form>
+    </aside>
+    <main>
+      <header class="top"><div><div class="eyebrow">JOTRIP INTERNAL</div><h1 id="page-title">Điều hành</h1></div><div id="clock" class="chip"></div></header>
+
+      <section id="view-dispatch" class="view active">
+        <div class="cards">
+          <article><span>Hôm nay</span><strong id="today-count">-</strong></article>
+          <article><span>Ngày mai</span><strong id="tomorrow-count">-</strong></article>
+          <article><span>Cần nhắc</span><strong id="reminder-count">-</strong></article>
+        </div>
+        <div class="panel"><div class="panel-head"><div><div class="eyebrow">D-1 REMINDER</div><h2>Cần nhắc tài xế / đối tác</h2></div><button id="refresh-dashboard" class="secondary">Làm mới</button></div><div id="reminder-list"></div></div>
+        <div class="panel"><div class="panel-head"><div><div class="eyebrow">TOMORROW</div><h2>Lịch ngày mai</h2></div></div><div id="tomorrow-list"></div></div>
+      </section>
+
+      <section id="view-new" class="view">
+        <div class="panel">
+          <div class="panel-head"><div><div class="eyebrow">PASTE & PARSE</div><h2>Dán nội dung đã chốt</h2></div></div>
+          <textarea id="paste-source" rows="10" placeholder="Dán nguyên nội dung xác nhận khách vào đây..."></textarea>
+          <div class="actions"><button id="parse-btn">Tự điền</button><button id="clear-btn" class="secondary">Xóa</button></div>
+        </div>
+        <form id="booking-form" class="panel form-grid">
+          <label>Trạng thái<select name="status"><option value="inquiry">Inquiry</option><option value="hold">Hold</option><option value="confirmed">Confirmed</option></select></label>
+          <label>Ngày đi<input name="service_date" type="date" required></label>
+          <label>Tour<input name="tour_type" placeholder="Big game fishing tour (private)"></label>
+          <label>Số khách<input name="guests" type="number" min="1"></label>
+          <label>Khách đại diện<input name="representative"></label>
+          <label>Điện thoại<input name="phone"></label>
+          <label>Telegram<input name="telegram"></label>
+          <label>WhatsApp<input name="whatsapp"></label>
+          <label>Quốc tịch<input name="nationality"></label>
+          <label>Giờ tour<input name="start_time" type="time"></label>
+          <label>Kết thúc<input name="end_time" type="time"></label>
+          <label>Giờ đón<input name="pickup_time" type="time"></label>
+          <label class="wide">Điểm đón<input name="pickup_location"></label>
+          <label>Giá<input name="total_amount" type="number" min="0"></label>
+          <label>Tiền tệ<select name="currency"><option>VND</option><option>USD</option></select></label>
+          <label>Thanh toán<select name="payment_method"><option value="unknown">Chưa rõ</option><option value="cash">Cash</option><option value="card">Card</option><option value="transfer">Transfer</option></select></label>
+          <label>Booking owner<input name="owner_name" placeholder="Anh / staff"></label>
+          <label class="wide">Bao gồm<textarea name="inclusions" rows="3"></textarea></label>
+          <label class="wide">Ghi chú<textarea name="notes" rows="3"></textarea></label>
+          <div class="wide actions"><button type="submit">Lưu booking</button><span id="save-status" class="muted"></span></div>
+        </form>
+      </section>
+
+      <section id="view-search" class="view">
+        <div class="panel"><div class="searchbar"><input id="search-q" placeholder="Tên khách, số điện thoại, khách sạn, booking code..."><button id="search-btn">Tìm</button></div><div id="search-results"></div></div>
+        <div id="booking-detail" class="panel hidden"></div>
+      </section>
+
+      <section id="view-contacts" class="view">
+        <form id="contact-form" class="panel form-grid">
+          <div class="wide"><div class="eyebrow">ADDRESS BOOK</div><h2>Thêm đối tác / tài xế</h2></div>
+          <label>Loại<select name="kind"><option value="partner">Đối tác tàu</option><option value="driver">Tài xế</option><option value="captain">Thuyền trưởng</option><option value="host">Host</option><option value="other">Khác</option></select></label>
+          <label>Tên<input name="name" required></label>
+          <label>Điện thoại<input name="phone"></label>
+          <label>Zalo (SĐT)<input name="zalo_phone"></label>
+          <label>WhatsApp<input name="whatsapp"></label>
+          <label>Công ty / nhóm<input name="company"></label>
+          <label class="check"><input name="can_collect_cash" type="checkbox"> Có thể thu tiền hộ</label>
+          <label class="wide">Ghi chú<textarea name="notes" rows="2"></textarea></label>
+          <div class="wide actions"><button type="submit">Lưu liên hệ</button><span id="contact-status" class="muted"></span></div>
+        </form>
+        <div class="panel"><div class="panel-head"><h2>Danh bạ</h2><button id="refresh-contacts" class="secondary">Làm mới</button></div><div id="contacts-list"></div></div>
+      </section>
+    </main>
+  </div>
+  <template id="empty-template"><div class="empty">Chưa có dữ liệu.</div></template>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
