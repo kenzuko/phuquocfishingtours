@@ -1,0 +1,16 @@
+{
+  "name": "phuquocfishingtours-desk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check worker.js && node --check core/parser.js && node --check core/messages.js && node --check core/auth.js && node --check public/app.js",
+    "test": "node --test test/*.test.mjs",
+    "build": "npm run check && npm test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
