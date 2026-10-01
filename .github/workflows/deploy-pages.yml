@@ -156,6 +156,16 @@ jobs:
           test "$HEALTH_CODE" = "200" || { echo "::error::Health endpoint failed"; exit 1; }
           node -e 'const x=require("./health.json"); if(x.status!=="ok" || x.database_bound!==true) process.exit(1)'
 
+          ROOT_CODE=$(curl -sS -o app.html -w "%{http_code}" -b cookies.txt "$BASE/")
+          echo "pages_app_http=$ROOT_CODE"
+          test "$ROOT_CODE" = "200" || { echo "::error::App shell failed"; exit 1; }
+          grep -q "Fishing Desk" app.html || { echo "::error::App shell content missing"; exit 1; }
+
+          DASH_CODE=$(curl -sS -o dashboard.json -w "%{http_code}" -b cookies.txt "$BASE/api/v1/dashboard")
+          echo "pages_dashboard_http=$DASH_CODE"
+          test "$DASH_CODE" = "200" || { echo "::error::Dashboard query failed"; cat dashboard.json; exit 1; }
+          node -e 'const x=require("./dashboard.json"); if(!Array.isArray(x.today_bookings)||!Array.isArray(x.tomorrow_bookings)||!Array.isArray(x.due_reminders)) process.exit(1)'
+
           CUSTOM_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" "https://$CUSTOM_DOMAIN/login" || true)
           echo "custom_domain_http=$CUSTOM_CODE"
           {
@@ -164,6 +174,8 @@ jobs:
             echo "- Pages login HTTP: $LOGIN_CODE"
             echo "- Pages auth HTTP: $AUTH_CODE"
             echo "- Pages health HTTP: $HEALTH_CODE"
+            echo "- Pages app HTTP: $ROOT_CODE"
+            echo "- Pages dashboard HTTP: $DASH_CODE"
             echo "- Custom domain HTTP: $CUSTOM_CODE"
           } >> "$GITHUB_STEP_SUMMARY"
 
