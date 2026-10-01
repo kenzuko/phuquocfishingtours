@@ -136,6 +136,37 @@ jobs:
         run: |
           npx --yes wrangler@4.143.0 pages deploy public --project-name "$PAGES_PROJECT" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
 
+      - name: Verify production runtime
+        env:
+          ADMIN_USER: ${{ secrets.FISHING_DESK_ADMIN_USER }}
+          ADMIN_PASSWORD: ${{ secrets.FISHING_DESK_ADMIN_PASSWORD }}
+        run: |
+          BASE="https://$PAGES_PROJECT.pages.dev"
+          LOGIN_CODE=$(curl -sS -o login.html -w "%{http_code}" "$BASE/login")
+          echo "pages_login_http=$LOGIN_CODE"
+          test "$LOGIN_CODE" = "200" || { echo "::error::Pages login endpoint failed"; exit 1; }
+
+          AUTH_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -c cookies.txt -b cookies.txt             -H "Origin: $BASE"             -H "Content-Type: application/x-www-form-urlencoded"             --data-urlencode "username=$ADMIN_USER"             --data-urlencode "password=$ADMIN_PASSWORD"             "$BASE/auth/login")
+          echo "pages_auth_http=$AUTH_CODE"
+          test "$AUTH_CODE" = "303" || { echo "::error::Pages login failed"; exit 1; }
+
+          HEALTH_CODE=$(curl -sS -o health.json -w "%{http_code}" -b cookies.txt "$BASE/api/health")
+          echo "pages_health_http=$HEALTH_CODE"
+          cat health.json
+          test "$HEALTH_CODE" = "200" || { echo "::error::Health endpoint failed"; exit 1; }
+          node -e 'const x=require("./health.json"); if(x.status!=="ok" || x.database_bound!==true) process.exit(1)'
+
+          CUSTOM_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" "https://$CUSTOM_DOMAIN/login" || true)
+          echo "custom_domain_http=$CUSTOM_CODE"
+          {
+            echo "### Runtime verification"
+            echo ""
+            echo "- Pages login HTTP: $LOGIN_CODE"
+            echo "- Pages auth HTTP: $AUTH_CODE"
+            echo "- Pages health HTTP: $HEALTH_CODE"
+            echo "- Custom domain HTTP: $CUSTOM_CODE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Attach external-DNS custom subdomain
         id: domain
         env:
