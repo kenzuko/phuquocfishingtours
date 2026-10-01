@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "phuquocfishingtours-desk",
+  "main": "./worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "booking.phuquocfishingtours.com",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "BOOKING_DB",
+      "database_name": "phuquocfishingtours-booking",
+      "migrations_dir": "db/migrations"
+    }
+  ]
+}
