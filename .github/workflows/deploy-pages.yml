@@ -1,0 +1,158 @@
+name: Deploy Fishing Desk to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-phuquocfishingtours-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PAGES_PROJECT: phuquocfishingtours-booking
+  CUSTOM_DOMAIN: booking.phuquocfishingtours.com
+  DB_NAME: phuquocfishingtours-booking
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and verify
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Validate required secrets
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_USER: ${{ secrets.FISHING_DESK_ADMIN_USER }}
+          ADMIN_PASSWORD: ${{ secrets.FISHING_DESK_ADMIN_PASSWORD }}
+          SESSION_SECRET: ${{ secrets.FISHING_DESK_SESSION_SECRET }}
+        run: |
+          test -n "$CF_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CF_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          test -n "$ADMIN_USER" || { echo "::error::Missing FISHING_DESK_ADMIN_USER"; exit 1; }
+          test -n "$ADMIN_PASSWORD" || { echo "::error::Missing FISHING_DESK_ADMIN_PASSWORD"; exit 1; }
+          test -n "$SESSION_SECRET" || { echo "::error::Missing FISHING_DESK_SESSION_SECRET"; exit 1; }
+
+      - name: Locate D1 database
+        id: d1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4.143.0 d1 list --json > d1.json
+          DB_ID=$(node -e 'const fs=require("fs"); const rows=JSON.parse(fs.readFileSync("d1.json","utf8")); const x=rows.find(r=>r.name===process.env.DB_NAME); if(x) process.stdout.write(x.uuid||x.id||"");')
+          if [ -z "$DB_ID" ]; then
+            echo "::error::D1 database $DB_NAME was not found."
+            exit 1
+          fi
+          echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build Pages Function and config
+        env:
+          DB_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          npx --yes esbuild@0.25.10 worker.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=public/_worker.js
+          node <<'NODE'
+          const fs=require("fs");
+          const cfg={
+            "$schema":"node_modules/wrangler/config-schema.json",
+            name:process.env.PAGES_PROJECT,
+            pages_build_output_dir:"./public",
+            compatibility_date:"2026-10-01",
+            d1_databases:[{
+              binding:"BOOKING_DB",
+              database_name:process.env.DB_NAME,
+              database_id:process.env.DB_ID,
+              migrations_dir:"db/migrations"
+            }]
+          };
+          fs.writeFileSync("wrangler.pages.deploy.json",JSON.stringify(cfg,null,2));
+          NODE
+
+      - name: Ensure Pages project exists
+        id: pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
+          CODE=$(curl -sS -o project.json -w "%{http_code}"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$API/$PAGES_PROJECT")
+          if [ "$CODE" = "404" ]; then
+            curl -fsS "$API"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "{"name":"$PAGES_PROJECT","production_branch":"main"}" > project.json
+          elif [ "$CODE" != "200" ]; then
+            cat project.json
+            echo "::error::Unable to read/create Pages project (HTTP $CODE). API token needs Pages Write."
+            exit 1
+          fi
+          SUCCESS=$(node -e 'const x=require("./project.json"); process.stdout.write(String(x.success!==false))')
+          test "$SUCCESS" = "true" || { cat project.json; exit 1; }
+          SUBDOMAIN=$(node -e 'const x=require("./project.json"); const r=x.result||x; process.stdout.write(r.subdomain||"")')
+          if [ -z "$SUBDOMAIN" ]; then SUBDOMAIN="$PAGES_PROJECT.pages.dev"; fi
+          echo "subdomain=$SUBDOMAIN" >> "$GITHUB_OUTPUT"
+          echo "Pages target: $SUBDOMAIN"
+
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.143.0 d1 migrations apply BOOKING_DB --remote --config wrangler.pages.deploy.json
+
+      - name: Configure Pages login secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_USER: ${{ secrets.FISHING_DESK_ADMIN_USER }}
+          ADMIN_PASSWORD: ${{ secrets.FISHING_DESK_ADMIN_PASSWORD }}
+          SESSION_SECRET: ${{ secrets.FISHING_DESK_SESSION_SECRET }}
+        run: |
+          printf '%s' "$ADMIN_USER" | npx --yes wrangler@4.143.0 pages secret put ADMIN_USER --project-name "$PAGES_PROJECT"
+          printf '%s' "$ADMIN_PASSWORD" | npx --yes wrangler@4.143.0 pages secret put ADMIN_PASSWORD --project-name "$PAGES_PROJECT"
+          printf '%s' "$SESSION_SECRET" | npx --yes wrangler@4.143.0 pages secret put SESSION_SECRET --project-name "$PAGES_PROJECT"
+
+      - name: Deploy Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4.143.0 pages deploy public             --project-name "$PAGES_PROJECT"             --branch main             --commit-hash "$GITHUB_SHA"             --commit-dirty=false             --config wrangler.pages.deploy.json
+
+      - name: Attach external-DNS custom subdomain
+        id: domain
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT/domains"
+          CODE=$(curl -sS -o domain.json -w "%{http_code}"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$API/$CUSTOM_DOMAIN")
+          if [ "$CODE" = "404" ]; then
+            curl -fsS "$API"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "{"name":"$CUSTOM_DOMAIN"}" > domain.json
+          elif [ "$CODE" != "200" ]; then
+            cat domain.json
+            echo "::error::Unable to attach Pages custom domain (HTTP $CODE)."
+            exit 1
+          fi
+          STATUS=$(node -e 'const x=require("./domain.json"); const r=x.result||x; process.stdout.write(r.status||"unknown")')
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Fishing Desk Pages"
+            echo ""
+            echo "- Pages: https://$PAGES_TARGET"
+            echo "- Custom domain: https://$CUSTOM_DOMAIN"
+            echo "- Domain status: $STATUS"
+            echo "- DNS to add at the current DNS provider: CNAME booking -> $PAGES_TARGET"
+          } >> "$GITHUB_STEP_SUMMARY"
