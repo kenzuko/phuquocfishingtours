@@ -14,40 +14,23 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Diagnose public tracking route
+      - name: Check customer pages and shared booking data
         run: |
           BASE="https://booking.phuquocfishingtours.com"
-          TOKEN="k4n7m2q9x8v3r6p5"
-          echo "--- root token initial response ---"
-          curl -sS -D root.headers -o root.body "$BASE/$TOKEN" || true
-          cat root.headers
-          echo "--- slash token initial response ---"
-          curl -sS -D slash.headers -o slash.body "$BASE/$TOKEN/" || true
-          cat slash.headers
-          echo "--- legacy trip token initial response ---"
-          curl -sS -D legacy.headers -o legacy.body "$BASE/trip/$TOKEN" || true
-          cat legacy.headers
-          echo "--- public API ---"
-          API_CODE=$(curl -sS -D api.headers -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
-          cat api.headers
-          echo "api=$API_CODE"
-          cat trip.json
-          test "$API_CODE" = "200"
+          check_trip() {
+            TOKEN="$1"; DATE="$2"; NAME="$3"; GUESTS="$4"
+            PAGE_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.html -w "%{http_code}" "$BASE/$TOKEN")
+            echo "$TOKEN page=$PAGE_CODE"
+            test "$PAGE_CODE" = "200"
+            grep -q "Your Fishing Trip" trip.html
 
-      - name: Check all customer trip data
-        run: |
-          BASE="https://booking.phuquocfishingtours.com"
-          for TOKEN in k4n7m2q9x8v3r6p5 p5h8q2m7x4v9n6r3 j1k6m9q3x7v4n8r2 j6k2m8q4x9v3n7r5; do
             API_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
             echo "$TOKEN api=$API_CODE"
             test "$API_CODE" = "200"
-            node -e 'const x=require("./trip.json"); if(x.status!=="confirmed" || !x.service_date || !x.representative) process.exit(1)'
-          done
-          curl -sS "$BASE/api/public/trips/k4n7m2q9x8v3r6p5" -o ken.json
-          node -e 'const x=require("./ken.json"); if(x.service_date!=="2026-10-04"||x.representative!=="Ken"||x.guest_label!=="2"||x.status!=="confirmed")process.exit(1)'
-          curl -sS "$BASE/api/public/trips/p5h8q2m7x4v9n6r3" -o phong.json
-          node -e 'const x=require("./phong.json"); if(x.service_date!=="2026-10-05"||x.representative!=="Phong"||x.guest_label!=="3"||x.status!=="confirmed")process.exit(1)'
-          curl -sS "$BASE/api/public/trips/j1k6m9q3x7v4n8r2" -o jan14.json
-          node -e 'const x=require("./jan14.json"); if(x.service_date!=="2027-01-14"||x.representative!=="Ken"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
-          curl -sS "$BASE/api/public/trips/j6k2m8q4x9v3n7r5" -o jan16.json
-          node -e 'const x=require("./jan16.json"); if(x.service_date!=="2027-01-16"||x.representative!=="Ken"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
+            node -e 'const x=require("./trip.json"),d=process.argv[1],n=process.argv[2],g=process.argv[3]; console.log(JSON.stringify({date:x.service_date,name:x.representative,guests:x.guest_label,status:x.status,progress:x.progress})); if(x.service_date!==d||x.representative!==n||String(x.guest_label)!==g||x.status!=="confirmed")process.exit(1)' "$DATE" "$NAME" "$GUESTS"
+          }
+
+          check_trip k4n7m2q9x8v3r6p5 2026-10-04 Ken 2
+          check_trip p5h8q2m7x4v9n6r3 2026-10-05 Phong 3
+          check_trip j1k6m9q3x7v4n8r2 2027-01-14 Ken 2-4
+          check_trip j6k2m8q4x9v3n7r5 2027-01-16 Ken 2-4
