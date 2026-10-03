@@ -69,3 +69,5 @@ WHERE id=(SELECT id FROM bookings WHERE service_date='2027-01-16' AND lower(repr
 INSERT INTO bookings(id,booking_code,status,service_date,tour_type,guests,guest_label,representative,start_time,end_time,notes,source_text,weather_status,owner_name,public_token,public_link_enabled,public_link_created_at)
 SELECT 'bk_seed_20270116_ken','FISH-20270116-KEN01','confirmed','2027-01-16','Big Fishing',2,'2-4','Ken','14:00','21:00','Số khách dự kiến: 2-4 NL.','16/01/2027 Chiều - Ken (2-4NL)','unknown','JoTrip','j6k2m8q4x9v3n7r5',1,CURRENT_TIMESTAMP
 WHERE NOT EXISTS(SELECT 1 FROM bookings WHERE service_date='2027-01-16' AND lower(representative)='ken' AND status!='cancelled');
+
+-- Shared calendar seed and public tracking aliases, 2026-10-03.
