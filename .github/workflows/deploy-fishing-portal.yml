@@ -179,7 +179,7 @@ jobs:
             --data-urlencode "name=$CUSTOM_DOMAIN" \
             "$DNS_API" > dns.json
           REC_ID=$(node -e 'const x=require("./dns.json"); const r=(x.result||[])[0]; if(r) process.stdout.write(r.id||"")')
-          node -e 'require("fs").writeFileSync("dns-payload.json",JSON.stringify({type:"CNAME",name:process.env.CUSTOM_DOMAIN,content:process.env.PAGES_TARGET,ttl:1,proxied:true}))'
+          node -e 'require("fs").writeFileSync("dns-payload.json",JSON.stringify({type:"CNAME",name:process.env.CUSTOM_DOMAIN,content:process.env.PAGES_TARGET,ttl:1,proxied:false}))'
           if [ -n "$REC_ID" ]; then
             CODE=$(curl -sS -o dns-result.json -w "%{http_code}" -X PUT \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -192,7 +192,7 @@ jobs:
               --data-binary @dns-payload.json "$DNS_API")
           fi
           test "$CODE" = "200" || { cat dns-result.json; echo "::error::Unable to create/update $CUSTOM_DOMAIN DNS (HTTP $CODE). Token needs Zone DNS Edit for $ROOT_DOMAIN."; exit 1; }
-          node -e 'const x=require("./dns-result.json"); if(x.success!==true) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
+          node -e 'const x=require("./dns-result.json"); if(x.success!==true || x.result.proxied!==false) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
 
       - name: Verify Pages runtime and redirect safety
         env:
@@ -227,6 +227,6 @@ jobs:
             echo "- Root HTTP: $ROOT_CODE"
             echo "- /fishing HTTP: $FISH_CODE"
             echo "- Follow redirects HTTP: $FOLLOW_CODE"
-            echo "- DNS: CNAME $CUSTOM_DOMAIN -> $PAGES_TARGET (proxied)"
+            echo "- DNS: CNAME $CUSTOM_DOMAIN -> $PAGES_TARGET (DNS-only)"
             echo "- Data: shared D1 $DB_NAME"
           } >> "$GITHUB_STEP_SUMMARY"
