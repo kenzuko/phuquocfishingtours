@@ -192,7 +192,7 @@ jobs:
           test "$CODE" = "200" || { cat dns-result.json; echo "::error::Unable to create/update $CUSTOM_DOMAIN DNS"; exit 1; }
           node -e 'const x=require("./dns-result.json"); if(x.success!==true || x.result.proxied!==true) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
 
-      - name: Verify root-native runtime
+      - name: Verify root-native runtime and browser assets
         env:
           PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
@@ -213,14 +213,28 @@ jobs:
           echo "$ROOT_RESULT" | grep -q 'code=200' || exit 1
           echo "$ROOT_RESULT" | grep -q 'redirects=0' || exit 1
           grep -Eq "Fishing Ops|Lịch điều hành" root.html || { head -c 800 root.html; exit 1; }
-          test "$OLD_CODE" = "308" -o "$OLD_CODE" = "200" || { echo "::error::Old /fishing compatibility path unexpected HTTP $OLD_CODE"; exit 1; }
+          test "$OLD_CODE" = "200" || { echo "::error::Legacy /fishing must be direct 200, got $OLD_CODE"; exit 1; }
+
+          APP_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o served-app.js -w "%{http_code}" -A "$UA" "https://$CUSTOM_DOMAIN/app.js?v=20261003d" || true)
+          echo "served_app_http=$APP_CODE"
+          test "$APP_CODE" = "200" || { head -c 800 served-app.js || true; exit 1; }
+          if grep -Fq 'window.location.href="/fishing"' served-app.js; then
+            echo "::error::Served app.js still contains the old /fishing client redirect"
+            exit 1
+          fi
+          if grep -Fq '/fishing/api' served-app.js; then
+            echo "::error::Served app.js still contains legacy /fishing/api paths"
+            exit 1
+          fi
+          grep -Fq '/api/me' served-app.js || { echo "::error::Served app.js is not root-native"; exit 1; }
 
           {
             echo "### Fishing Ops Portal"
             echo ""
             echo "- Custom domain: https://$CUSTOM_DOMAIN"
             echo "- Root: direct HTTP 200, zero redirects"
-            echo "- Legacy /fishing: $OLD_CODE"
+            echo "- Legacy /fishing: direct HTTP 200"
+            echo "- Browser app.js: root-native, no /fishing redirect"
             echo "- DNS: proxied CNAME -> $PAGES_TARGET"
             echo "- Data: shared D1 $DB_NAME"
           } >> "$GITHUB_STEP_SUMMARY"
