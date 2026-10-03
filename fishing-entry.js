@@ -29,6 +29,11 @@ async function normalizeResponse(response) {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
 
+  // Never let Safari keep an authenticated/unauthenticated app shell across auth changes.
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.set("pragma", "no-cache");
+  headers.set("expires", "0");
+
   let body = await response.text();
   body = body
     .replaceAll('href="/fishing/', 'href="/')
@@ -44,12 +49,10 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Old bookmarked URLs remain usable, but the public portal is root-native.
+    // Root is the canonical portal. Keep the old /fishing URL as a safe 200 fallback
+    // instead of redirecting it, so an expired client session can never bounce forever.
     if (url.pathname === "/fishing" || url.pathname === "/fishing/") {
-      return new Response(null, {
-        status: 308,
-        headers: { location: "/", "cache-control": "no-store" }
-      });
+      return normalizeResponse(await app.fetch(request, env, ctx));
     }
 
     const internalPath = mapPath(url.pathname);
