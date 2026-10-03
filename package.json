@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check worker.js && node --check core/parser.js && node --check core/messages.js && node --check core/auth.js && node --check public/app.js && node --check public/trip.js",
+    "check": "node --check worker.js && node --check core/parser.js && node --check core/messages.js && node --check core/auth.js && node --check public/app.js && node --check public/trip.js && node --check fishing-worker.js && node --check fishing-public/fishing/app.js",
     "test": "node --test test/*.test.mjs",
     "build": "npm run check && npm test",
     "dev": "wrangler dev",
