@@ -1,0 +1,38 @@
+name: Verify Customer Tracking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-customer-tracking.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check public trip pages and data
+        run: |
+          BASE="https://booking.phuquocfishingtours.com"
+          for TOKEN in k4n7m2q9x8v3r6p5 p5h8q2m7x4v9n6r3 j1k6m9q3x7v4n8r2 j6k2m8q4x9v3n7r5; do
+            CODE=$(curl -sS -L --connect-timeout 10 --max-time 25 -o trip.html -w "%{http_code}" "$BASE/$TOKEN")
+            FINAL=$(curl -sS -L -o /dev/null -w "%{url_effective}" "$BASE/$TOKEN")
+            echo "$TOKEN page=$CODE final=$FINAL"
+            test "$CODE" = "200"
+            grep -q "Your Fishing Trip" trip.html
+            API_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
+            echo "$TOKEN api=$API_CODE"
+            test "$API_CODE" = "200"
+            node -e 'const x=require("./trip.json"); if(x.status!=="confirmed" || !x.service_date || !x.representative) process.exit(1)'
+          done
+          curl -sS "$BASE/api/public/trips/k4n7m2q9x8v3r6p5" -o ken.json
+          node -e 'const x=require("./ken.json"); if(x.service_date!=="2026-10-04"||x.representative!=="Ken"||x.guest_label!=="2"||x.status!=="confirmed")process.exit(1)'
+          curl -sS "$BASE/api/public/trips/p5h8q2m7x4v9n6r3" -o phong.json
+          node -e 'const x=require("./phong.json"); if(x.service_date!=="2026-10-05"||x.representative!=="Phong"||x.guest_label!=="3"||x.status!=="confirmed")process.exit(1)'
+          curl -sS "$BASE/api/public/trips/j1k6m9q3x7v4n8r2" -o jan14.json
+          node -e 'const x=require("./jan14.json"); if(x.service_date!=="2027-01-14"||x.representative!=="Ken"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
+          curl -sS "$BASE/api/public/trips/j6k2m8q4x9v3n7r5" -o jan16.json
+          node -e 'const x=require("./jan16.json"); if(x.service_date!=="2027-01-16"||x.representative!=="Ken"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
