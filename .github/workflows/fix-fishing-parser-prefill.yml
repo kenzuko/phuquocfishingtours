@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/fix-fishing-parser-prefill.yml"
+      - ".fishing-parser-trigger"
 
 permissions:
   contents: write
