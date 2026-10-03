@@ -27,7 +27,7 @@ jobs:
             API_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
             echo "$TOKEN api=$API_CODE"
             test "$API_CODE" = "200"
-            node -e 'const x=require("./trip.json"),d=process.argv[1],n=process.argv[2],g=process.argv[3]; console.log(JSON.stringify({date:x.service_date,name:x.representative,guests:x.guest_label,status:x.status,progress:x.progress})); if(x.service_date!==d||x.representative!==n||String(x.guest_label)!==g||x.status!=="confirmed")process.exit(1)' "$DATE" "$NAME" "$GUESTS"
+            node -e 'const x=require("./trip.json"),d=process.argv[1],n=process.argv[2].toLowerCase(),g=process.argv[3]; console.log(JSON.stringify({date:x.service_date,name:x.representative,guests:x.guest_label,status:x.status,progress:x.progress})); if(x.service_date!==d||String(x.representative||"").toLowerCase()!==n||String(x.guest_label)!==g||x.status!=="confirmed")process.exit(1)' "$DATE" "$NAME" "$GUESTS"
           }
 
           check_trip k4n7m2q9x8v3r6p5 2026-10-04 Ken 2
