@@ -40,11 +40,6 @@ jobs:
           npm run build
           node --check fishing-worker.js
           node --check fishing-public/fishing/app.js
-
-      - name: Add JoTrip logo
-        run: |
-          mkdir -p fishing-public/fishing
-          curl -fL --retry 3 --retry-delay 2 "https://drive.google.com/uc?export=download&id=1aE5Ywq2taDkSDppjFFXPFNqDOqF47ond" -o fishing-public/fishing/jotrip-logo.png
           test -s fishing-public/fishing/jotrip-logo.png
 
       - name: Validate required secrets
