@@ -14,7 +14,7 @@ const NO_STORE = {
 };
 
 const PARTNER_CODES = {
-  thanhnhan: { actor: "Thạnh Nhân", role: "partner", company: "Cano Thạnh Nhân" }
+  thanhnhan: { actor: "Thanh Nhàn", role: "partner", company: "Cano Thanh Nhàn" }
 };
 
 const ROOT_ASSETS = new Map([
@@ -96,6 +96,8 @@ async function readSession(request, env) {
     if (!safeEqual(expected, actual)) return null;
     const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(token)));
     if (!payload?.actor || Number(payload.exp || 0) < Date.now()) return null;
+    if (payload.actor === "Thạnh Nhân") payload.actor = "Thanh Nhàn";
+    if (payload.company === "Cano Thạnh Nhân") payload.company = "Cano Thanh Nhàn";
     return payload;
   } catch {
     return null;
