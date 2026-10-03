@@ -17,6 +17,8 @@ const PARTNER_CODES = {
   thanhnhan: { actor: "Thanh Nhàn", role: "partner", company: "Cano Thanh Nhàn" }
 };
 
+const BOOKING_STATUSES = new Set(["inquiry","hold","confirmed","ready","running","completed","cancelled"]);
+
 const ROOT_ASSETS = new Map([
   ["/styles.css", "/fishing/styles.css"],
   ["/app.js", "/fishing/app.js"],
@@ -289,10 +291,38 @@ function canonicalApiPath(pathname) {
 async function portalApi(request, env, session) {
   const db = env.BOOKING_DB;
   const path = canonicalApiPath(new URL(request.url).pathname);
+  const role = session.role || "partner";
   if (!["GET", "HEAD"].includes(request.method) && !sameOrigin(request)) return json({ error: "origin_rejected" }, 403);
-  if (path === "/api/me" && request.method === "GET") return json({ actor: session.actor, role: session.role || "partner", company: session.company || "" });
+  if (path === "/api/me" && request.method === "GET") return json({ actor: session.actor, role, company: session.company || "", can_change_status: true, can_delete: role === "admin" });
   if (path === "/api/schedule" && request.method === "GET") return json(await schedule(db));
   if (path === "/api/activity" && request.method === "GET") return json({ results: await activity(db) });
+
+  const statusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
+  if (statusMatch && request.method === "POST") {
+    const body = await readJson(request);
+    const status = String(body?.status || "").trim();
+    if (!BOOKING_STATUSES.has(status)) return json({ error: "invalid_status" }, 400);
+    const booking = await queryOne(db, `SELECT id,booking_code,representative,service_date,status FROM bookings WHERE id=? LIMIT 1`, [statusMatch[1]]);
+    if (!booking) return json({ error: "booking_not_found" }, 404);
+    if (booking.status !== status) {
+      await db.prepare(`UPDATE bookings SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(status, booking.id).run();
+      await addBookingEvent(db, booking.id, session.actor, "status_changed", `Trạng thái: ${booking.status} → ${status}.`);
+      await addAudit(db, booking.id, session.actor, "status_changed", `${booking.service_date} · ${booking.representative || booking.booking_code} · ${booking.status} → ${status}`);
+    }
+    return json({ ok:true, booking_id:booking.id, status });
+  }
+
+  const deleteMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
+  if (deleteMatch && request.method === "DELETE") {
+    if (role !== "admin") return json({ error: "admin_required" }, 403);
+    const booking = await queryOne(db, `SELECT id,booking_code,representative,service_date FROM bookings WHERE id=? LIMIT 1`, [deleteMatch[1]]);
+    if (!booking) return json({ error: "booking_not_found" }, 404);
+    const summary = `${booking.service_date} · ${booking.representative || booking.booking_code}`;
+    await addAudit(db, null, session.actor, "deleted", summary);
+    await db.prepare(`DELETE FROM bookings WHERE id=?`).bind(booking.id).run();
+    return json({ ok:true, deleted:true, booking_id:booking.id });
+  }
+
   if (path === "/api/parse" && request.method === "POST") {
     const body = await readJson(request);
     if (!body?.text) return json({ error: "text_required" }, 400);
