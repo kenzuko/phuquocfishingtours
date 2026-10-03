@@ -6,22 +6,22 @@ on:
     paths:
       - "fishing-worker.js"
       - "fishing-public/**"
+      - "core/parser.js"
       - "db/migrations/**"
       - ".github/workflows/deploy-fishing-portal.yml"
   workflow_dispatch:
 
 concurrency:
-  group: deploy-phuquocfishingtours-fishing-portal
+  group: deploy-jotrip-fishing-ops
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 env:
-  WORKER_NAME: phuquocfishingtours-fishing-ops
+  PAGES_PROJECT: jotrip-fishing-ops
+  CUSTOM_DOMAIN: fishing.jotrip.vn
   DB_NAME: phuquocfishingtours-booking
-  ROUTE_PATTERN: phuquocfishingtours.com/fishing*
-  ZONE_NAME: phuquocfishingtours.com
 
 jobs:
   deploy:
@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install and verify existing desk
+      - name: Install and verify
         run: |
           npm install --no-audit --no-fund
           npm run build
@@ -66,20 +66,18 @@ jobs:
           test -n "$DB_ID" || { echo "::error::D1 database not found"; exit 1; }
           echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Build Worker configs
+      - name: Build Pages Function and config
         env:
           DB_ID: ${{ steps.d1.outputs.database_id }}
         run: |
+          npx --yes esbuild@0.25.10 fishing-worker.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=fishing-public/_worker.js
           node <<'NODE'
           const fs=require("fs");
-          const base={
+          const cfg={
             "$schema":"node_modules/wrangler/config-schema.json",
-            name:process.env.WORKER_NAME,
-            main:"./fishing-worker.js",
+            name:process.env.PAGES_PROJECT,
+            pages_build_output_dir:"./fishing-public",
             compatibility_date:"2026-10-01",
-            workers_dev:true,
-            preview_urls:false,
-            assets:{directory:"./fishing-public",binding:"ASSETS",run_worker_first:true},
             d1_databases:[{
               binding:"BOOKING_DB",
               database_name:process.env.DB_NAME,
@@ -87,26 +85,37 @@ jobs:
               migrations_dir:"db/migrations"
             }]
           };
-          fs.writeFileSync("wrangler.fishing.bootstrap.json",JSON.stringify(base,null,2));
-          fs.writeFileSync("wrangler.fishing.json",JSON.stringify({
-            ...base,
-            routes:[{pattern:process.env.ROUTE_PATTERN,zone_name:process.env.ZONE_NAME}]
-          },null,2));
+          fs.writeFileSync("wrangler.fishing.pages.json",JSON.stringify(cfg,null,2));
           NODE
 
       - name: Apply D1 migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.143.0 d1 migrations apply BOOKING_DB --remote --config wrangler.fishing.bootstrap.json
+        run: npx --yes wrangler@4.143.0 d1 migrations apply BOOKING_DB --remote --config wrangler.fishing.pages.json
 
-      - name: Bootstrap Worker without production route
+      - name: Ensure Pages project exists
+        id: pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.143.0 deploy --config wrangler.fishing.bootstrap.json
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
+          CODE=$(curl -sS -o project.json -w "%{http_code}" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API/$PAGES_PROJECT")
+          if [ "$CODE" = "404" ]; then
+            node -e 'require("fs").writeFileSync("project-payload.json",JSON.stringify({name:process.env.PAGES_PROJECT,production_branch:"main"}))'
+            CREATE_CODE=$(curl -sS -o project.json -w "%{http_code}" -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data-binary @project-payload.json "$API")
+            test "$CREATE_CODE" = "200" || { cat project.json; echo "::error::Unable to create Pages project"; exit 1; }
+          elif [ "$CODE" != "200" ]; then
+            cat project.json
+            echo "::error::Unable to read Pages project (HTTP $CODE)"
+            exit 1
+          fi
+          SUBDOMAIN=$(node -e 'const x=require("./project.json"); const r=x.result||x; process.stdout.write(r.subdomain||"")')
+          if [ -z "$SUBDOMAIN" ]; then SUBDOMAIN="$PAGES_PROJECT.pages.dev"; fi
+          echo "subdomain=$SUBDOMAIN" >> "$GITHUB_OUTPUT"
 
-      - name: Configure Worker secrets
+      - name: Configure Pages secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -114,27 +123,51 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.FISHING_DESK_ADMIN_PASSWORD }}
           SESSION_SECRET: ${{ secrets.FISHING_DESK_SESSION_SECRET }}
         run: |
-          printf '%s' "$ADMIN_USER" | npx --yes wrangler@4.143.0 secret put ADMIN_USER --config wrangler.fishing.bootstrap.json
-          printf '%s' "$ADMIN_PASSWORD" | npx --yes wrangler@4.143.0 secret put ADMIN_PASSWORD --config wrangler.fishing.bootstrap.json
-          printf '%s' "$SESSION_SECRET" | npx --yes wrangler@4.143.0 secret put SESSION_SECRET --config wrangler.fishing.bootstrap.json
+          printf '%s' "$ADMIN_USER" | npx --yes wrangler@4.143.0 pages secret put ADMIN_USER --project-name "$PAGES_PROJECT"
+          printf '%s' "$ADMIN_PASSWORD" | npx --yes wrangler@4.143.0 pages secret put ADMIN_PASSWORD --project-name "$PAGES_PROJECT"
+          printf '%s' "$SESSION_SECRET" | npx --yes wrangler@4.143.0 pages secret put SESSION_SECRET --project-name "$PAGES_PROJECT"
 
-      - name: Deploy production path route
+      - name: Deploy Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.143.0 deploy --config wrangler.fishing.json
+        run: npx --yes wrangler@4.143.0 pages deploy fishing-public --project-name "$PAGES_PROJECT" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
 
-      - name: Verify route is protected
+      - name: Attach custom domain
+        id: domain
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
-          CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o fishing.html -w "%{http_code}" "https://phuquocfishingtours.com/fishing" || true)
-          echo "fishing_http=$CODE"
-          test "$CODE" = "200" || { cat fishing.html || true; exit 1; }
-          grep -Eq "Fishing Ops|Kích hoạt Fishing Ops" fishing.html || { cat fishing.html; exit 1; }
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT/domains"
+          CODE=$(curl -sS -o domain.json -w "%{http_code}" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API/$CUSTOM_DOMAIN")
+          if [ "$CODE" = "404" ]; then
+            node -e 'require("fs").writeFileSync("domain-payload.json",JSON.stringify({name:process.env.CUSTOM_DOMAIN}))'
+            CREATE_CODE=$(curl -sS -o domain.json -w "%{http_code}" -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data-binary @domain-payload.json "$API")
+            test "$CREATE_CODE" = "200" || { cat domain.json; echo "::error::Unable to attach custom domain"; exit 1; }
+          elif [ "$CODE" != "200" ]; then
+            cat domain.json
+            echo "::error::Unable to read custom domain (HTTP $CODE)"
+            exit 1
+          fi
+          STATUS=$(node -e 'const x=require("./domain.json"); const r=x.result||x; process.stdout.write(r.status||"pending")')
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
           {
             echo "### Fishing Ops Portal"
             echo ""
-            echo "- URL: https://phuquocfishingtours.com/fishing"
-            echo "- HTTP: $CODE"
+            echo "- Pages target: $PAGES_TARGET"
+            echo "- Custom domain: https://$CUSTOM_DOMAIN/fishing"
+            echo "- Domain status: $STATUS"
+            echo "- DNS: CNAME fishing -> $PAGES_TARGET"
             echo "- Data: shared D1 $DB_NAME"
-            echo "- Search indexing: disabled"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify Pages runtime
+        env:
+          PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
+        run: |
+          CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o fishing.html -w "%{http_code}" "https://$PAGES_TARGET/fishing" || true)
+          echo "pages_fishing_http=$CODE"
+          test "$CODE" = "200" || { cat fishing.html || true; exit 1; }
+          grep -Eq "Fishing Ops|Kích hoạt Fishing Ops" fishing.html || { cat fishing.html; exit 1; }
