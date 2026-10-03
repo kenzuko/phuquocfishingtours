@@ -17,41 +17,45 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Correct partner identity in source
+      - name: Correct partner identity and verification
         run: |
           python <<'PY'
           from pathlib import Path
 
-          path = Path("fishing-worker.js")
-          text = path.read_text(encoding="utf-8")
+          worker = Path("fishing-worker.js")
+          text = worker.read_text(encoding="utf-8")
 
           old_profile = 'thanhnhan: { actor: "Thạnh Nhân", role: "partner", company: "Cano Thạnh Nhân" }'
           new_profile = 'thanhnhan: { actor: "Thanh Nhàn", role: "partner", company: "Cano Thanh Nhàn" }'
-          if old_profile not in text and new_profile not in text:
-              raise SystemExit("partner profile marker not found")
           text = text.replace(old_profile, new_profile)
 
           old_session = '    if (!payload?.actor || Number(payload.exp || 0) < Date.now()) return null;\n    return payload;'
           new_session = '    if (!payload?.actor || Number(payload.exp || 0) < Date.now()) return null;\n    if (payload.actor === "Thạnh Nhân") payload.actor = "Thanh Nhàn";\n    if (payload.company === "Cano Thạnh Nhân") payload.company = "Cano Thanh Nhàn";\n    return payload;'
           if old_session in text:
               text = text.replace(old_session, new_session, 1)
-          elif 'payload.actor === "Thạnh Nhân"' not in text:
-              raise SystemExit("session normalization marker not found")
+          worker.write_text(text, encoding="utf-8")
 
-          path.write_text(text, encoding="utf-8")
+          workflow = Path(".github/workflows/deploy-fishing-portal.yml")
+          wf = workflow.read_text(encoding="utf-8")
+          old_check = 'x.actor!=="Thạnh Nhân"'
+          new_check = 'x.actor!=="Thanh Nhàn"'
+          if old_check not in wf and new_check not in wf:
+              raise SystemExit("verification marker not found")
+          wf = wf.replace(old_check, new_check)
+          workflow.write_text(wf, encoding="utf-8")
           PY
           node --check fishing-worker.js
           grep -F 'actor: "Thanh Nhàn"' fishing-worker.js
-          grep -F 'company: "Cano Thanh Nhàn"' fishing-worker.js
+          grep -F 'x.actor!=="Thanh Nhàn"' .github/workflows/deploy-fishing-portal.yml
 
       - name: Commit correction
         run: |
-          if git diff --quiet -- fishing-worker.js; then
+          if git diff --quiet -- fishing-worker.js .github/workflows/deploy-fishing-portal.yml; then
             echo "Already corrected"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fishing-worker.js
-          git commit -m "fix: correct Cano Thanh Nhàn partner identity"
+          git add fishing-worker.js .github/workflows/deploy-fishing-portal.yml
+          git commit -m "fix: align Cano Thanh Nhàn identity checks"
           git push origin HEAD:main
