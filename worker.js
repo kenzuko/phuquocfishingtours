@@ -318,7 +318,7 @@ export default {
 
     if (/^\/(?:trip\/)?[A-Za-z0-9_-]{16,80}\/?$/.test(url.pathname)) {
       if (!env.ASSETS) return new Response("Trip page unavailable",{status:503});
-      const tripPage = new URL("/trip.html",request.url);
+      const tripPage = new URL("/trip",request.url);
       return env.ASSETS.fetch(new Request(tripPage,request));
     }
 
