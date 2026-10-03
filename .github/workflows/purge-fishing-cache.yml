@@ -1,0 +1,71 @@
+name: Purge Fishing Edge Cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/purge-fishing-cache.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CUSTOM_DOMAIN: fishing.jotrip.vn
+  ROOT_DOMAIN: jotrip.vn
+
+jobs:
+  purge-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Locate Cloudflare zone
+        id: zone
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          curl -sS -G -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            --data-urlencode "name=$ROOT_DOMAIN" \
+            --data-urlencode "account.id=$CLOUDFLARE_ACCOUNT_ID" \
+            "https://api.cloudflare.com/client/v4/zones" > zone.json
+          ZONE_ID=$(node -e 'const x=require("./zone.json"); const z=(x.result||[]).find(v=>v.name===process.env.ROOT_DOMAIN); if(z) process.stdout.write(z.id||"")')
+          test -n "$ZONE_ID" || { cat zone.json; echo "::error::Zone not found"; exit 1; }
+          echo "zone_id=$ZONE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Purge Fishing hostname cache
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ZONE_ID: ${{ steps.zone.outputs.zone_id }}
+        run: |
+          node -e 'require("fs").writeFileSync("purge.json",JSON.stringify({files:["https://fishing.jotrip.vn/","https://fishing.jotrip.vn/fishing","https://fishing.jotrip.vn/fishing/","https://fishing.jotrip.vn/fishing/index.html"]}))'
+          CODE=$(curl -sS -o purge-result.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @purge.json \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/purge_cache")
+          cat purge-result.json
+          if [ "$CODE" != "200" ]; then
+            echo "::warning::Selective cache purge not permitted by current token (HTTP $CODE)."
+          else
+            node -e 'const x=require("./purge-result.json"); if(x.success!==true) process.exit(1)'
+          fi
+
+      - name: Safari-like redirect verification
+        run: |
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
+          sleep 3
+          echo '--- DNS ---'
+          getent ahosts "$CUSTOM_DOMAIN" || true
+          echo '--- ROOT HEADERS ---'
+          curl -sS -D - -o /dev/null --connect-timeout 10 --max-time 20 -A "$UA" "https://$CUSTOM_DOMAIN/"
+          echo '--- /fishing HEADERS ---'
+          curl -sS -D - -o /dev/null --connect-timeout 10 --max-time 20 -A "$UA" "https://$CUSTOM_DOMAIN/fishing"
+          echo '--- FOLLOW ROOT ---'
+          RESULT=$(curl -sS -L --max-redirs 10 --connect-timeout 10 --max-time 30 -o root-body.html -w 'code=%{http_code} redirects=%{num_redirects} effective=%{url_effective}' -A "$UA" "https://$CUSTOM_DOMAIN/")
+          echo "$RESULT"
+          echo "$RESULT" | grep -q 'code=200' || exit 1
+          echo "$RESULT" | grep -Eq 'redirects=0|redirects=1' || { echo '::error::Unexpected redirect chain'; exit 1; }
+          grep -Eq 'Fishing Ops|Lịch điều hành' root-body.html || { echo '::error::Root did not return Fishing Ops content'; head -c 500 root-body.html; exit 1; }
