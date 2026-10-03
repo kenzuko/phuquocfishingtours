@@ -25,14 +25,26 @@ async function normalizeResponse(response) {
   }
 
   const contentType = headers.get("content-type") || "";
+
+  // Keep auth-sensitive shell and JS out of Safari/edge caches while the portal is internal.
+  if (contentType.includes("text/html") || contentType.includes("javascript")) {
+    headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+    headers.set("pragma", "no-cache");
+    headers.set("expires", "0");
+  }
+
+  if (contentType.includes("javascript")) {
+    let body = await response.text();
+    body = body
+      .replaceAll('window.location.href="/fishing"', 'window.location.replace("/?session=expired")')
+      .replaceAll('"/fishing/api/', '"/api/')
+      .replaceAll("'/fishing/api/", "'/api/");
+    return new Response(body, { status: response.status, statusText: response.statusText, headers });
+  }
+
   if (!contentType.includes("text/html")) {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
-
-  // Never let Safari keep an authenticated/unauthenticated app shell across auth changes.
-  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("pragma", "no-cache");
-  headers.set("expires", "0");
 
   let body = await response.text();
   body = body
@@ -49,8 +61,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Root is the canonical portal. Keep the old /fishing URL as a safe 200 fallback
-    // instead of redirecting it, so an expired client session can never bounce forever.
+    // Root is canonical. Old /fishing stays a direct 200 fallback rather than a redirect.
     if (url.pathname === "/fishing" || url.pathname === "/fishing/") {
       return normalizeResponse(await app.fetch(request, env, ctx));
     }
