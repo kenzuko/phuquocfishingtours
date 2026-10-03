@@ -4,7 +4,7 @@ import { authConfigured, createSession, validSession, sessionCookie, clearSessio
 
 const JSON_HEADERS = { "content-type":"application/json; charset=utf-8", "cache-control":"no-store" };
 const ALLOWED_BOOKING_FIELDS = new Set([
-  "status","service_date","tour_type","guests","representative","phone","telegram","whatsapp","nationality",
+  "status","service_date","tour_type","guests","guest_label","representative","phone","telegram","whatsapp","nationality",
   "start_time","end_time","pickup_time","pickup_location","total_amount","currency","payment_method","payment_status",
   "cash_collector_contact_id","inclusions","notes","public_notes","weather_status","owner_name"
 ]);
@@ -42,7 +42,7 @@ function sameOrigin(request) {
   return origin === new URL(request.url).origin;
 }
 function tripUrl(request, publicToken) {
-  return publicToken ? `${new URL(request.url).origin}/trip/${publicToken}` : null;
+  return publicToken ? `${new URL(request.url).origin}/${publicToken}` : null;
 }
 function publicWeather(status) {
   const map = {
@@ -79,7 +79,7 @@ async function loadBooking(db, bookingId) {
 }
 async function loadPublicTrip(db, publicToken) {
   const booking = await queryOne(db, `
-    SELECT id,booking_code,status,service_date,tour_type,guests,representative,start_time,end_time,pickup_time,pickup_location,
+    SELECT id,booking_code,status,service_date,tour_type,guests,guest_label,representative,start_time,end_time,pickup_time,pickup_location,
            total_amount,currency,payment_method,inclusions,public_notes,weather_status,updated_at
     FROM bookings
     WHERE public_token=? AND public_link_enabled=1 AND public_link_revoked_at IS NULL
@@ -102,6 +102,7 @@ async function loadPublicTrip(db, publicToken) {
     service_date: booking.service_date,
     tour_type: booking.tour_type,
     guests: booking.guests,
+    guest_label: booking.guest_label,
     representative: booking.representative,
     start_time: booking.start_time,
     end_time: booking.end_time,
@@ -226,12 +227,12 @@ async function api(request, env) {
     const b=await readJson(request); if (!b?.service_date) return json({error:"service_date_required"},400);
     const bookingId=id("bk"), code=bookingCode(), publicToken=token();
     const columns=[
-      "id","booking_code","status","service_date","tour_type","guests","representative","phone","telegram","whatsapp","nationality",
+      "id","booking_code","status","service_date","tour_type","guests","guest_label","representative","phone","telegram","whatsapp","nationality",
       "start_time","end_time","pickup_time","pickup_location","total_amount","currency","payment_method","payment_status",
       "inclusions","notes","public_notes","source_text","weather_status","owner_name","public_token","public_link_enabled","public_link_created_at"
     ];
     const values=[
-      bookingId,code,b.status||"inquiry",b.service_date,b.tour_type||null,b.guests||null,b.representative||null,b.phone||null,b.telegram||null,b.whatsapp||null,b.nationality||null,
+      bookingId,code,b.status||"inquiry",b.service_date,b.tour_type||null,b.guests||null,b.guest_label||null,b.representative||null,b.phone||null,b.telegram||null,b.whatsapp||null,b.nationality||null,
       b.start_time||null,b.end_time||null,b.pickup_time||null,b.pickup_location||null,b.total_amount||null,b.currency||"VND",b.payment_method||"unknown","due",
       b.inclusions||null,b.notes||null,b.public_notes||null,b.source_text||null,b.weather_status||"unknown",b.owner_name||null,publicToken,1,new Date().toISOString()
     ];
@@ -315,7 +316,7 @@ export default {
 
     if (url.pathname.startsWith("/api/public/")) return publicApi(request,env);
 
-    if (/^\/trip\/[A-Za-z0-9_-]{16,80}$/.test(url.pathname)) {
+    if (/^\/(?:trip\/)?[A-Za-z0-9_-]{16,80}$/.test(url.pathname)) {
       if (!env.ASSETS) return new Response("Trip page unavailable",{status:503});
       const tripPage = new URL("/trip.html",request.url);
       return env.ASSETS.fetch(new Request(tripPage,request));

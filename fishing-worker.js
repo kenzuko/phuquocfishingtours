@@ -265,7 +265,7 @@ async function addBookingEvent(db, bookingId, actor, type, summary) {
 
 async function schedule(db) {
   const from = localDate(-1);
-  const rows = await queryAll(db, `SELECT b.id,b.booking_code,b.status,b.service_date,b.tour_type,b.guests,b.representative,b.phone,b.nationality,b.start_time,b.end_time,b.pickup_time,b.pickup_location,b.total_amount,b.currency,b.payment_status,b.weather_status,b.owner_name,b.updated_at,
+  const rows = await queryAll(db, `SELECT b.id,b.booking_code,b.status,b.service_date,b.tour_type,b.guests,b.guest_label,b.representative,b.phone,b.nationality,b.start_time,b.end_time,b.pickup_time,b.pickup_location,b.total_amount,b.currency,b.payment_status,b.weather_status,b.owner_name,b.updated_at,
   (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='boat_partner' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS boat_partner_name,
   (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS driver_name,
   (SELECT c.phone FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS driver_phone,

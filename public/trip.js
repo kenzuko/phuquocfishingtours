@@ -9,6 +9,9 @@ function money(v,c){
   if(!v)return "To be settled";
   return new Intl.NumberFormat(c==="VND"?"vi-VN":"en-US").format(Number(v))+" "+(c||"VND");
 }
+function statusLabel(v){
+  return ({inquiry:"Request received",hold:"On hold",confirmed:"Booking confirmed",ready:"Ready for pickup",running:"Trip in progress",completed:"Trip completed",cancelled:"Trip cancelled"})[v]||"Booking updated";
+}
 function setStep(id,done,current=false){
   const el=$(id); el.classList.toggle("done",Boolean(done)); el.classList.toggle("current",Boolean(current&&!done));
 }
@@ -27,10 +30,12 @@ async function load(){
     $("#trip-code").textContent=t.booking_code||"JoTrip";
     $("#hero-date").textContent=fmtDate(t.service_date);
     $("#hero-tour").textContent=t.tour_type||"Private Fishing Tour";
+    $("#booking-status").textContent=statusLabel(t.status);
+    $("#booking-status").dataset.status=t.status||"unknown";
     $("#pickup-time").textContent=t.pickup_time||"-";
     $("#pickup-location").textContent=t.pickup_location||"Pickup details will be updated.";
     $("#trip-time").textContent=[t.start_time,t.end_time].filter(Boolean).join(" - ")||"-";
-    $("#guest-count").textContent=t.guests||"-";
+    $("#guest-count").textContent=t.guest_label||t.guests||"-";
     $("#trip-total").textContent=money(t.total_amount,t.currency);
     $("#payment-method").textContent=t.payment_method&&t.payment_method!=="unknown"?t.payment_method:"Payment arrangement confirmed with JoTrip";
 

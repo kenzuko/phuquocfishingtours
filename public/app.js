@@ -120,7 +120,7 @@ function dispatchRows(rows){
     rows.map(b=>`<button class="dispatch-row" data-booking="${esc(b.id)}">
       <span class="time-cell"><strong>${esc(b.pickup_time||b.start_time||'-')}</strong><small>${esc(b.start_time&&b.end_time?`${b.start_time}-${b.end_time}`:'')}</small></span>
       <span class="guest-cell"><strong>${esc(b.representative||b.booking_code)}</strong><small>${esc(b.pickup_location||b.booking_code)}</small></span>
-      <span><strong>${esc(b.tour_type||'-')}</strong><small>${esc(b.guests?b.guests+' khách':'')}</small></span>
+      <span><strong>${esc(b.tour_type||'-')}</strong><small>${esc((b.guest_label||b.guests)?(b.guest_label||b.guests)+' khách':'')}</small></span>
       <span>${b.has_boat?'<span class="mini ok">✓ Đã gán</span>':'<span class="mini warn">Chưa gán</span>'}</span>
       <span>${b.has_driver?'<span class="mini ok">✓ Đã gán</span>':'<span class="mini warn">Chưa gán</span>'}</span>
       <span>${badge(b.status)}</span>
@@ -212,7 +212,7 @@ async function openBooking(id){
   const activeByRole=Object.fromEntries((b.assignments||[]).map(a=>[a.role,a]));
   root.innerHTML=`
     <div class="booking-visual">
-      <div><span class="eyebrow">${esc(b.booking_code)}</span><h2>${esc(b.representative||'Chưa có tên khách')}</h2><p>${esc(b.tour_type||'Fishing tour')} · ${fmtDate(b.service_date)} · ${esc(b.guests||'-')} khách</p></div>
+      <div><span class="eyebrow">${esc(b.booking_code)}</span><h2>${esc(b.representative||'Chưa có tên khách')}</h2><p>${esc(b.tour_type||'Fishing tour')} · ${fmtDate(b.service_date)} · ${esc(b.guest_label||b.guests||'-')} khách</p></div>
       <div class="status-edit"><select id="booking-status">
         ${['inquiry','hold','confirmed','ready','running','completed','cancelled'].map(s=>`<option value="${s}" ${b.status===s?'selected':''}>${STATUS_LABELS[s]}</option>`).join('')}
       </select><button id="save-status">Lưu trạng thái</button></div>
