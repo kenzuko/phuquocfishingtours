@@ -1,12 +1,11 @@
-name: Fix Fishing Parser Prefill
+name: Apply Customer Tracking Calendar Patch
 
 on:
   push:
     branches: [main]
     paths:
-      - "scripts/patch_fishing_parser_prefill.py"
-      - ".fishing-parser-trigger"
-      - ".github/workflows/fix-fishing-parser-prefill.yml"
+      - "scripts/patch_customer_tracking_calendar.py"
+      - ".customer-tracking-trigger"
 
 permissions:
   contents: write
@@ -19,20 +18,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply parser and data prefill patch
+      - name: Apply calendar and customer tracking patch
         run: |
-          python -m py_compile scripts/patch_fishing_parser_prefill.py
-          python scripts/patch_fishing_parser_prefill.py
+          python -m py_compile scripts/patch_customer_tracking_calendar.py
+          python scripts/patch_customer_tracking_calendar.py
+          node --check worker.js
+          node --check public/app.js
+          node --check public/trip.js
           node --check fishing-worker.js
           node --check fishing-public/fishing/app.js
           npm install --no-audit --no-fund
           npm run build
 
-      - name: Commit fix
+      - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fishing-worker.js fishing-public/fishing/app.js fishing-public/fishing/index.html
+          git add worker.js public/app.js public/trip.js public/trip.html public/trip.css fishing-worker.js fishing-public/fishing/app.js db/migrations/0004-calendar-customer-tracking.sql
           git diff --cached --quiet && { echo "No changes"; exit 0; }
-          git commit -m "fix: resolve partner message from existing booking data"
+          git commit -m "feat: add tour calendar and customer tracking links"
           git push origin HEAD:main
