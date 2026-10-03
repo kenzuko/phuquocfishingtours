@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/fix-fishing-parser-prefill.yml"
+      - "scripts/patch_fishing_parser_prefill.py"
       - ".fishing-parser-trigger"
+      - ".github/workflows/fix-fishing-parser-prefill.yml"
 
 permissions:
   contents: write
@@ -18,10 +19,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Patch parser and portal UI
+      - name: Apply parser and data prefill patch
         run: |
-          echo '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' | base64 -d | gzip -d > /tmp/patch.py
-          python /tmp/patch.py
+          python -m py_compile scripts/patch_fishing_parser_prefill.py
+          python scripts/patch_fishing_parser_prefill.py
           node --check fishing-worker.js
           node --check fishing-public/fishing/app.js
           npm install --no-audit --no-fund
@@ -33,5 +34,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add fishing-worker.js fishing-public/fishing/app.js fishing-public/fishing/index.html
           git diff --cached --quiet && { echo "No changes"; exit 0; }
-          git commit -m "fix: enrich fishing booking from existing data"
+          git commit -m "fix: resolve partner message from existing booking data"
           git push origin HEAD:main
