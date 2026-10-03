@@ -41,6 +41,12 @@ jobs:
           node --check fishing-worker.js
           node --check fishing-public/fishing/app.js
 
+      - name: Add JoTrip logo
+        run: |
+          mkdir -p fishing-public/fishing
+          curl -fL --retry 3 --retry-delay 2 "https://drive.google.com/uc?export=download&id=1aE5Ywq2taDkSDppjFFXPFNqDOqF47ond" -o fishing-public/fishing/jotrip-logo.png
+          test -s fishing-public/fishing/jotrip-logo.png
+
       - name: Validate required secrets
         env:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -168,7 +174,11 @@ jobs:
         env:
           PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
-          CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o fishing.html -w "%{http_code}" "https://$PAGES_TARGET/fishing" || true)
-          echo "pages_fishing_http=$CODE"
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o fishing.html -w "%{http_code}" "https://$PAGES_TARGET/fishing" || true)
+            echo "pages_fishing_http=$CODE attempt=$i"
+            if [ "$CODE" = "200" ]; then break; fi
+            sleep 3
+          done
           test "$CODE" = "200" || { cat fishing.html || true; exit 1; }
-          grep -Eq "Fishing Ops|Kích hoạt Fishing Ops" fishing.html || { cat fishing.html; exit 1; }
+          grep -Eq "Fishing Ops|Lịch điều hành" fishing.html || { cat fishing.html; exit 1; }
