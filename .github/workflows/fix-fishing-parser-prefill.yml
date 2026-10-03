@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "scripts/patch_customer_tracking_calendar.py"
+      - "scripts/fix_customer_tracking_slash.py"
       - ".customer-tracking-trigger"
 
 permissions:
@@ -20,8 +21,9 @@ jobs:
 
       - name: Apply calendar and customer tracking patch
         run: |
-          python -m py_compile scripts/patch_customer_tracking_calendar.py
+          python -m py_compile scripts/patch_customer_tracking_calendar.py scripts/fix_customer_tracking_slash.py
           python scripts/patch_customer_tracking_calendar.py
+          python scripts/fix_customer_tracking_slash.py
           node --check worker.js
           node --check public/app.js
           node --check public/trip.js
@@ -35,24 +37,44 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add worker.js public/app.js public/trip.js public/trip.html public/trip.css fishing-worker.js fishing-public/fishing/app.js db/migrations/0004-calendar-customer-tracking.sql
-          git diff --cached --quiet && { echo "No changes"; exit 0; }
-          git commit -m "feat: add tour calendar and customer tracking links"
-          git push origin HEAD:main
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: accept canonical customer tracking route"
+            git push origin HEAD:main
+          else
+            echo "No changes"
+          fi
 
       - name: Verify public customer tracking pages and seeded calendar
         run: |
           BASE="https://booking.phuquocfishingtours.com"
+          for ATTEMPT in $(seq 1 18); do
+            CODE=$(curl -sS -L --retry 2 --retry-delay 1 --connect-timeout 10 --max-time 25 -o probe.html -w "%{http_code}" "$BASE/k4n7m2q9x8v3r6p5" || true)
+            if [ "$CODE" = "200" ] && grep -q "Your Fishing Trip" probe.html; then
+              echo "customer tracking deployment ready on attempt $ATTEMPT"
+              break
+            fi
+            echo "waiting for customer tracking deployment: attempt=$ATTEMPT code=$CODE"
+            test "$ATTEMPT" != "18" || exit 1
+            sleep 5
+          done
+
           for TOKEN in k4n7m2q9x8v3r6p5 p5h8q2m7x4v9n6r3 j1k6m9q3x7v4n8r2 j6k2m8q4x9v3n7r5; do
-            CODE=$(curl -sS --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 25 -o trip.html -w "%{http_code}" "$BASE/$TOKEN")
-            echo "$TOKEN page=$CODE"
+            CODE=$(curl -sS -L --connect-timeout 10 --max-time 25 -o trip.html -w "%{http_code}" "$BASE/$TOKEN")
+            FINAL=$(curl -sS -L -o /dev/null -w "%{url_effective}" "$BASE/$TOKEN")
+            echo "$TOKEN page=$CODE final=$FINAL"
             test "$CODE" = "200"
             grep -q "Your Fishing Trip" trip.html
-            API_CODE=$(curl -sS --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
+            API_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
             echo "$TOKEN api=$API_CODE"
             test "$API_CODE" = "200"
             node -e 'const x=require("./trip.json"); if(x.status!=="confirmed" || !x.service_date || !x.representative) process.exit(1)'
           done
+
           curl -sS "$BASE/api/public/trips/k4n7m2q9x8v3r6p5" -o ken.json
-          node -e 'const x=require("./ken.json"); if(x.service_date!=="2026-10-04"||x.representative!=="Ken"||x.guest_label!=="2"||x.nationality!==undefined){}; if(x.status!=="confirmed")process.exit(1)'
+          node -e 'const x=require("./ken.json"); if(x.service_date!=="2026-10-04"||x.representative!=="Ken"||x.guest_label!=="2"||x.status!=="confirmed")process.exit(1)'
+          curl -sS "$BASE/api/public/trips/p5h8q2m7x4v9n6r3" -o phong.json
+          node -e 'const x=require("./phong.json"); if(x.service_date!=="2026-10-05"||x.representative!=="Phong"||x.guest_label!=="3"||x.status!=="confirmed")process.exit(1)'
           curl -sS "$BASE/api/public/trips/j1k6m9q3x7v4n8r2" -o jan14.json
           node -e 'const x=require("./jan14.json"); if(x.service_date!=="2027-01-14"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
+          curl -sS "$BASE/api/public/trips/j6k2m8q4x9v3n7r5" -o jan16.json
+          node -e 'const x=require("./jan16.json"); if(x.service_date!=="2027-01-16"||x.guest_label!=="2-4"||x.status!=="confirmed")process.exit(1)'
