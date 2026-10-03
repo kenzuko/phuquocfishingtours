@@ -32,6 +32,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+          node --check booking-entry.js
 
       - name: Validate required secrets
         env:
@@ -76,7 +77,7 @@ jobs:
         env:
           DB_ID: ${{ steps.d1.outputs.database_id }}
         run: |
-          npx --yes esbuild@0.25.10 worker.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=public/_worker.js
+          npx --yes esbuild@0.25.10 booking-entry.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=public/_worker.js
           node <<'NODE'
           const fs=require("fs");
           const cfg={
@@ -183,6 +184,11 @@ jobs:
           test "$DASH_CODE" = "200" || { echo "::error::Dashboard query failed"; cat dashboard.json; exit 1; }
           node -e 'const x=require("./dashboard.json"); if(!Array.isArray(x.today_bookings)||!Array.isArray(x.tomorrow_bookings)||!Array.isArray(x.due_reminders)) process.exit(1)'
 
+          SHORT_CODE=$(curl -sS -o short-trip.html -w "%{http_code}" "$BASE/k4n7m2q9x8v3r6p5")
+          echo "short_trip_http=$SHORT_CODE"
+          test "$SHORT_CODE" = "200" || { echo "::error::Short customer trip URL failed"; exit 1; }
+          grep -q "Your Fishing Trip" short-trip.html || { echo "::error::Short customer trip page missing"; exit 1; }
+
           CUSTOM_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" "https://$CUSTOM_DOMAIN/login" || true)
           echo "custom_domain_http=$CUSTOM_CODE"
           {
@@ -194,6 +200,7 @@ jobs:
             echo "- Pages app HTTP: $ROOT_CODE"
             echo "- Visual assets HTTP: $LOGO_CODE/$BOAT_CODE/$ISLAND_CODE"
             echo "- Pages dashboard HTTP: $DASH_CODE"
+            echo "- Short customer trip HTTP: $SHORT_CODE"
             echo "- Custom domain HTTP: $CUSTOM_CODE"
           } >> "$GITHUB_STEP_SUMMARY"
 
