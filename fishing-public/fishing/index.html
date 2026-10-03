@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#0b2f57">
   <title>JoTrip Fishing Ops</title>
   <link rel="stylesheet" href="/fishing/styles.css">
+  <link rel="stylesheet" href="/fishing/visual-v2.css">
 </head>
 <body>
   <header class="topbar">
@@ -36,9 +37,9 @@
     <section class="panel active" data-panel="overview">
       <div class="hero card">
         <div>
-          <span class="hero-kicker">JOTrip Fishing Ops</span>
+          <span class="hero-kicker">JoTrip Fishing Ops</span>
           <h1>Nhìn một lần là biết tour nào cần xử lý.</h1>
-          <p>Booking, tài xế, cano và lịch chạy nằm chung một chỗ. Đối tác chỉ thêm và cập nhật - không có quyền xoá tour.</p>
+          <p>Booking, trạng thái, tài xế, cano và lịch chạy nằm chung một chỗ. Tài khoản đối tác được thêm tour và cập nhật trạng thái. JoTrip Admin có toàn quyền quản trị, kể cả xoá booking khi cần.</p>
         </div>
         <button class="primary hero-cta" data-go="new" type="button">+ Nhập booking mới</button>
       </div>
@@ -113,7 +114,7 @@
 
     <section class="panel" data-panel="history">
       <section class="card section-card">
-        <div class="section-head"><div><span class="dot"></span><h2>Lịch sử cập nhật</h2></div><span class="hint">Chỉ xem - không xoá</span></div>
+        <div class="section-head"><div><span class="dot"></span><h2>Lịch sử cập nhật</h2></div><span class="hint">Theo dõi ai đã thêm, đổi trạng thái hoặc xoá booking</span></div>
         <div class="timeline" id="activityList"><div class="empty">Đang tải lịch sử...</div></div>
       </section>
     </section>
@@ -122,5 +123,6 @@
   <div class="toast hidden" id="toast" role="status"></div>
   <script type="module" src="/fishing/app.js"></script>
   <script type="module" src="/fishing/extras.js"></script>
+  <script type="module" src="/fishing/manage.js"></script>
 </body>
 </html>
