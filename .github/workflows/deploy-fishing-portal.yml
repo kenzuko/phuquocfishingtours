@@ -176,7 +176,7 @@ jobs:
           ME_CODE=$(curl -sS -o me.json -w '%{http_code}' -b cookies.txt "$BASE/api/me")
           echo "api_me=$ME_CODE"
           test "$ME_CODE" = "200" || { cat me.json; exit 1; }
-          node -e 'const x=require("./me.json");if(x.role!=="partner"||x.actor!=="Thạnh Nhân")process.exit(1)'
+          node -e 'const x=require("./me.json");if(x.role!=="partner"||x.actor!=="Thanh Nhàn")process.exit(1)'
 
           SCHEDULE_CODE=$(curl -sS -o schedule.json -w '%{http_code}' -b cookies.txt "$BASE/api/schedule")
           echo "api_schedule=$SCHEDULE_CODE"
