@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "fishing-entry.js"
       - "fishing-worker.js"
       - "fishing-public/**"
       - "core/parser.js"
@@ -39,6 +40,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+          node --check fishing-entry.js
           node --check fishing-worker.js
           node --check fishing-public/fishing/app.js
           test -s fishing-public/fishing/jotrip-logo.png
@@ -72,7 +74,7 @@ jobs:
         env:
           DB_ID: ${{ steps.d1.outputs.database_id }}
         run: |
-          npx --yes esbuild@0.25.10 fishing-worker.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=fishing-public/_worker.js
+          npx --yes esbuild@0.25.10 fishing-entry.js --bundle --format=esm --platform=neutral --target=es2022 --outfile=fishing-public/_worker.js
           cp wrangler.jsonc wrangler.worker.backup.jsonc
           node <<'NODE'
           const fs=require("fs");
@@ -192,16 +194,7 @@ jobs:
           test "$CODE" = "200" || { cat dns-result.json; echo "::error::Unable to create/update $CUSTOM_DOMAIN DNS (HTTP $CODE). Token needs Zone DNS Edit for $ROOT_DOMAIN."; exit 1; }
           node -e 'const x=require("./dns-result.json"); if(x.success!==true) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
 
-          {
-            echo "### Fishing Ops Portal"
-            echo ""
-            echo "- Pages target: $PAGES_TARGET"
-            echo "- Custom domain: https://$CUSTOM_DOMAIN"
-            echo "- DNS: CNAME $CUSTOM_DOMAIN -> $PAGES_TARGET (proxied)"
-            echo "- Data: shared D1 $DB_NAME"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Verify Pages runtime
+      - name: Verify Pages runtime and redirect safety
         env:
           PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
@@ -215,9 +208,25 @@ jobs:
           grep -Eq "Fishing Ops|Lịch điều hành" fishing.html || { cat fishing.html; exit 1; }
 
           for i in 1 2 3 4 5 6; do
-            CUSTOM_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o custom.html -w "%{http_code}" "https://$CUSTOM_DOMAIN" || true)
-            echo "custom_domain_http=$CUSTOM_CODE attempt=$i"
-            if [ "$CUSTOM_CODE" = "200" -o "$CUSTOM_CODE" = "303" ]; then break; fi
+            ROOT_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o root.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/" || true)
+            FISH_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o custom-fishing.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/fishing" || true)
+            FOLLOW_CODE=$(curl -sS -L --max-redirs 5 --connect-timeout 10 --max-time 25 -o followed.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/" || true)
+            echo "custom_root=$ROOT_CODE custom_fishing=$FISH_CODE followed=$FOLLOW_CODE attempt=$i"
+            if [ "$ROOT_CODE" = "200" -a "$FISH_CODE" = "200" -a "$FOLLOW_CODE" = "200" ]; then break; fi
             sleep 5
           done
-          test "$CUSTOM_CODE" = "200" -o "$CUSTOM_CODE" = "303" || { echo "::warning::Custom domain DNS/SSL may still be propagating (HTTP $CUSTOM_CODE)"; }
+          test "$ROOT_CODE" = "200" || { echo "::error::Custom root is not direct 200 (HTTP $ROOT_CODE)"; exit 1; }
+          test "$FISH_CODE" = "200" || { echo "::error::Custom /fishing is not 200 (HTTP $FISH_CODE)"; exit 1; }
+          test "$FOLLOW_CODE" = "200" || { echo "::error::Redirect safety failed (HTTP $FOLLOW_CODE)"; exit 1; }
+
+          {
+            echo "### Fishing Ops Portal"
+            echo ""
+            echo "- Pages target: $PAGES_TARGET"
+            echo "- Custom domain: https://$CUSTOM_DOMAIN"
+            echo "- Root HTTP: $ROOT_CODE"
+            echo "- /fishing HTTP: $FISH_CODE"
+            echo "- Follow redirects HTTP: $FOLLOW_CODE"
+            echo "- DNS: CNAME $CUSTOM_DOMAIN -> $PAGES_TARGET (proxied)"
+            echo "- Data: shared D1 $DB_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
