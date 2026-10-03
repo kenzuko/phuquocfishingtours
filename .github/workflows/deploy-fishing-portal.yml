@@ -156,8 +156,6 @@ jobs:
             echo "::error::Unable to read custom domain (HTTP $CODE)"
             exit 1
           fi
-          STATUS=$(node -e 'const x=require("./domain.json"); const r=x.result||x; process.stdout.write(r.status||"pending")')
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Create or repair fishing DNS
         env:
@@ -179,7 +177,7 @@ jobs:
             --data-urlencode "name=$CUSTOM_DOMAIN" \
             "$DNS_API" > dns.json
           REC_ID=$(node -e 'const x=require("./dns.json"); const r=(x.result||[])[0]; if(r) process.stdout.write(r.id||"")')
-          node -e 'require("fs").writeFileSync("dns-payload.json",JSON.stringify({type:"CNAME",name:process.env.CUSTOM_DOMAIN,content:process.env.PAGES_TARGET,ttl:1,proxied:false}))'
+          node -e 'require("fs").writeFileSync("dns-payload.json",JSON.stringify({type:"CNAME",name:process.env.CUSTOM_DOMAIN,content:process.env.PAGES_TARGET,ttl:1,proxied:true}))'
           if [ -n "$REC_ID" ]; then
             CODE=$(curl -sS -o dns-result.json -w "%{http_code}" -X PUT \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -191,42 +189,38 @@ jobs:
               -H "Content-Type: application/json" \
               --data-binary @dns-payload.json "$DNS_API")
           fi
-          test "$CODE" = "200" || { cat dns-result.json; echo "::error::Unable to create/update $CUSTOM_DOMAIN DNS (HTTP $CODE). Token needs Zone DNS Edit for $ROOT_DOMAIN."; exit 1; }
-          node -e 'const x=require("./dns-result.json"); if(x.success!==true || x.result.proxied!==false) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
+          test "$CODE" = "200" || { cat dns-result.json; echo "::error::Unable to create/update $CUSTOM_DOMAIN DNS"; exit 1; }
+          node -e 'const x=require("./dns-result.json"); if(x.success!==true || x.result.proxied!==true) process.exit(1); console.log(`DNS ready: ${x.result.name} -> ${x.result.content}, proxied=${x.result.proxied}`)'
 
-      - name: Verify Pages runtime and redirect safety
+      - name: Verify root-native runtime
         env:
           PAGES_TARGET: ${{ steps.pages.outputs.subdomain }}
         run: |
-          for i in 1 2 3 4 5; do
-            CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o fishing.html -w "%{http_code}" "https://$PAGES_TARGET/fishing" || true)
-            echo "pages_fishing_http=$CODE attempt=$i"
-            if [ "$CODE" = "200" ]; then break; fi
-            sleep 3
-          done
-          test "$CODE" = "200" || { cat fishing.html || true; exit 1; }
-          grep -Eq "Fishing Ops|Lịch điều hành" fishing.html || { cat fishing.html; exit 1; }
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
+
+          PAGE_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o pages.html -w "%{http_code}" -A "$UA" "https://$PAGES_TARGET/" || true)
+          echo "pages_root=$PAGE_CODE"
+          test "$PAGE_CODE" = "200" || { head -c 800 pages.html || true; exit 1; }
+          grep -Eq "Fishing Ops|Lịch điều hành" pages.html || { head -c 800 pages.html; exit 1; }
 
           for i in 1 2 3 4 5 6; do
-            ROOT_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o root.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/" || true)
-            FISH_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o custom-fishing.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/fishing" || true)
-            FOLLOW_CODE=$(curl -sS -L --max-redirs 5 --connect-timeout 10 --max-time 25 -o followed.html -w "%{http_code}" "https://$CUSTOM_DOMAIN/" || true)
-            echo "custom_root=$ROOT_CODE custom_fishing=$FISH_CODE followed=$FOLLOW_CODE attempt=$i"
-            if [ "$ROOT_CODE" = "200" -a "$FISH_CODE" = "200" -a "$FOLLOW_CODE" = "200" ]; then break; fi
+            ROOT_RESULT=$(curl -sS -L --max-redirs 5 --connect-timeout 10 --max-time 25 -o root.html -w 'code=%{http_code} redirects=%{num_redirects} effective=%{url_effective}' -A "$UA" "https://$CUSTOM_DOMAIN/" || true)
+            OLD_CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" -A "$UA" "https://$CUSTOM_DOMAIN/fishing" || true)
+            echo "root=$ROOT_RESULT old_fishing=$OLD_CODE attempt=$i"
+            if echo "$ROOT_RESULT" | grep -q 'code=200' && echo "$ROOT_RESULT" | grep -q 'redirects=0'; then break; fi
             sleep 5
           done
-          test "$ROOT_CODE" = "200" || { echo "::error::Custom root is not direct 200 (HTTP $ROOT_CODE)"; exit 1; }
-          test "$FISH_CODE" = "200" || { echo "::error::Custom /fishing is not 200 (HTTP $FISH_CODE)"; exit 1; }
-          test "$FOLLOW_CODE" = "200" || { echo "::error::Redirect safety failed (HTTP $FOLLOW_CODE)"; exit 1; }
+          echo "$ROOT_RESULT" | grep -q 'code=200' || exit 1
+          echo "$ROOT_RESULT" | grep -q 'redirects=0' || exit 1
+          grep -Eq "Fishing Ops|Lịch điều hành" root.html || { head -c 800 root.html; exit 1; }
+          test "$OLD_CODE" = "308" -o "$OLD_CODE" = "200" || { echo "::error::Old /fishing compatibility path unexpected HTTP $OLD_CODE"; exit 1; }
 
           {
             echo "### Fishing Ops Portal"
             echo ""
-            echo "- Pages target: $PAGES_TARGET"
             echo "- Custom domain: https://$CUSTOM_DOMAIN"
-            echo "- Root HTTP: $ROOT_CODE"
-            echo "- /fishing HTTP: $FISH_CODE"
-            echo "- Follow redirects HTTP: $FOLLOW_CODE"
-            echo "- DNS: CNAME $CUSTOM_DOMAIN -> $PAGES_TARGET (DNS-only)"
+            echo "- Root: direct HTTP 200, zero redirects"
+            echo "- Legacy /fishing: $OLD_CODE"
+            echo "- DNS: proxied CNAME -> $PAGES_TARGET"
             echo "- Data: shared D1 $DB_NAME"
           } >> "$GITHUB_STEP_SUMMARY"
