@@ -78,7 +78,11 @@
             <label>Giờ bắt đầu<input id="start_time" type="time"></label>
             <label>Giờ kết thúc<input id="end_time" type="time"></label>
             <label>Giờ đón<input id="pickup_time" type="time"></label>
-            <label>Điểm đón<input id="pickup_location" placeholder="Khách sạn / địa điểm"></label>
+            <label>Khách sạn / điểm đón<input id="pickup_location" placeholder="Khách sạn / địa điểm"></label>
+            <label>Tiền cần thu<input id="total_amount" type="number" min="0" step="1000" inputmode="numeric" placeholder="0"></label>
+            <label>Tiền tệ<input id="currency" value="VND" placeholder="VND"></label>
+            <label>Người thu<input id="cash_collector_name" readonly placeholder="Chưa chỉ định"></label>
+            <label>Trạng thái thu<input id="payment_status" readonly placeholder="Chưa thu"></label>
             <label class="wide">Ghi chú<textarea id="notes" rows="3" placeholder="Yêu cầu đặc biệt nếu có"></textarea></label>
           </div>
           <div class="confirm-row"><div><strong id="confirmTitle">Kiểm tra lại trước khi lưu</strong><span id="confirmSubtitle">Có thể sửa trực tiếp các ô bên trên.</span></div><button class="primary" id="confirmBtn" type="button">Xác nhận lưu</button></div>

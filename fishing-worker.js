@@ -156,13 +156,19 @@ function parseQuickBooking(input) {
   const base = parseBookingText(text);
   const normalized = text.replace(/[–—]/g, "-");
   const dateMatch = normalized.match(/\b(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b/);
+  const dayOnlyMatch = normalized.match(/\bngày\s*(\d{1,2})\b/i);
+  const dayHint = dateMatch ? Number(dateMatch[1]) : Number(dayOnlyMatch?.[1] || 0) || null;
   const serviceDate = base.service_date || (dateMatch ? `${dateMatch[3]}-${String(dateMatch[2]).padStart(2,"0")}-${String(dateMatch[1]).padStart(2,"0")}` : "");
   const session = /\b(chiều|afternoon|pm)\b/i.test(normalized) ? "afternoon" : /\b(sáng|morning|am)\b/i.test(normalized) ? "morning" : "";
-  const guests = base.guests || Number(normalized.match(/\b(\d{1,2})\s*(?:NL|khách|khach|pax)\b/i)?.[1] || 0) || null;
+  const guests = base.guests || Number(normalized.match(/\b(\d{1,2})\s*(?:NL|khách|khach|pax|người|nguoi)\b/i)?.[1] || 0) || null;
   let representative = base.representative;
   if (!representative && dateMatch) {
     const afterDate = normalized.slice((dateMatch.index || 0) + dateMatch[0].length);
     const m = afterDate.match(/(?:sáng|chiều|morning|afternoon|am|pm)?\s*-\s*([^/(\n-]{2,50})/i);
+    if (m) representative = m[1].trim();
+  }
+  if (!representative) {
+    const m = normalized.match(/\b(?:của|khách(?:\s+tên)?|guest)\s+([A-Za-zÀ-ỹ][A-Za-zÀ-ỹ' .-]{1,40})(?=$|[\n,;])/i);
     if (m) representative = m[1].trim();
   }
   let nationality = base.nationality;
@@ -178,6 +184,7 @@ function parseQuickBooking(input) {
   return {
     ...base,
     service_date: serviceDate,
+    day_hint: dayHint,
     tour_type: base.tour_type || "Big Fishing",
     guests,
     representative: representative || "",
@@ -192,16 +199,60 @@ function parseQuickBooking(input) {
   };
 }
 
+async function bookingDetailForPortal(db, bookingId) {
+  return await queryOne(db, `SELECT b.*,
+    COALESCE(
+      (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='cash_collector' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1),
+      (SELECT c.name FROM contacts c WHERE c.id=b.cash_collector_contact_id LIMIT 1)
+    ) AS cash_collector_name
+    FROM bookings b WHERE b.id=? LIMIT 1`, [bookingId]);
+}
+
+function mergeExistingBooking(parsed, existing) {
+  if (!existing) return parsed;
+  const out = { ...parsed };
+  const fields = ["service_date","tour_type","representative","guests","nationality","phone","start_time","end_time","pickup_time","pickup_location","notes"];
+  for (const key of fields) {
+    if (out[key] === "" || out[key] === null || out[key] === undefined || (key === "guests" && !out[key])) out[key] = existing[key] ?? out[key];
+  }
+  if (out.total_amount === null || out.total_amount === undefined) out.total_amount = existing.total_amount ?? null;
+  if (!parsed.total_amount && existing.currency) out.currency = existing.currency;
+  if (!out.payment_method || out.payment_method === "unknown") out.payment_method = existing.payment_method || "unknown";
+  out.payment_status = existing.payment_status || "due";
+  out.cash_collector_name = existing.cash_collector_name || "";
+  out.matched_existing = true;
+  return out;
+}
+
 async function findDuplicate(db, data) {
-  if (!data.service_date) return null;
-  if (data.phone) {
-    const row = await queryOne(db, `SELECT id,booking_code,status,service_date,representative,guests,phone FROM bookings WHERE service_date=? AND status!='cancelled' AND phone=? ORDER BY updated_at DESC LIMIT 1`, [data.service_date, data.phone]);
-    if (row) return row;
+  let row = null;
+  if (data.service_date && data.phone) {
+    row = await queryOne(db, `SELECT id FROM bookings WHERE service_date=? AND status!='cancelled' AND phone=? ORDER BY updated_at DESC LIMIT 1`, [data.service_date, data.phone]);
   }
-  if (data.representative) {
-    return await queryOne(db, `SELECT id,booking_code,status,service_date,representative,guests,phone FROM bookings WHERE service_date=? AND status!='cancelled' AND lower(representative)=lower(?) ORDER BY updated_at DESC LIMIT 1`, [data.service_date, data.representative]);
+  if (!row && data.service_date && data.representative) {
+    row = await queryOne(db, `SELECT id FROM bookings WHERE service_date=? AND status!='cancelled' AND lower(representative)=lower(?) ORDER BY updated_at DESC LIMIT 1`, [data.service_date, data.representative]);
   }
-  return null;
+  if (!row && data.service_date && data.guests) {
+    const rows = await queryAll(db, `SELECT id FROM bookings WHERE service_date=? AND status!='cancelled' AND guests=? ORDER BY updated_at DESC LIMIT 2`, [data.service_date, data.guests]);
+    if (rows.length === 1) row = rows[0];
+  }
+  if (!row && data.day_hint) {
+    const candidates = await queryAll(db, `SELECT id,service_date,representative,guests,start_time FROM bookings WHERE service_date>=? AND status!='cancelled' AND substr(service_date,9,2)=? ORDER BY service_date ASC,updated_at DESC LIMIT 60`, [localDate(-1), String(data.day_hint).padStart(2,"0")]);
+    const rep = String(data.representative || "").trim().toLowerCase();
+    let best = null;
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      let score = 0;
+      const candidateRep = String(candidate.representative || "").trim().toLowerCase();
+      if (rep && candidateRep === rep) score += 8;
+      else if (rep && candidateRep && (candidateRep.includes(rep) || rep.includes(candidateRep))) score += 4;
+      if (data.guests && Number(candidate.guests) === Number(data.guests)) score += 5;
+      if (data.start_time && candidate.start_time === data.start_time) score += 2;
+      if (score > bestScore) { best = candidate; bestScore = score; }
+    }
+    if (best && bestScore >= 8) row = best;
+  }
+  return row ? await bookingDetailForPortal(db, row.id) : null;
 }
 
 async function addAudit(db, bookingId, actor, action, summary, sourceText = "") {
@@ -214,13 +265,14 @@ async function addBookingEvent(db, bookingId, actor, type, summary) {
 
 async function schedule(db) {
   const from = localDate(-1);
-  const rows = await queryAll(db, `SELECT b.id,b.booking_code,b.status,b.service_date,b.tour_type,b.guests,b.representative,b.phone,b.nationality,b.start_time,b.end_time,b.pickup_time,b.pickup_location,b.weather_status,b.owner_name,b.updated_at,
+  const rows = await queryAll(db, `SELECT b.id,b.booking_code,b.status,b.service_date,b.tour_type,b.guests,b.representative,b.phone,b.nationality,b.start_time,b.end_time,b.pickup_time,b.pickup_location,b.total_amount,b.currency,b.payment_status,b.weather_status,b.owner_name,b.updated_at,
   (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='boat_partner' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS boat_partner_name,
   (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS driver_name,
   (SELECT c.phone FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS driver_phone,
   (SELECT c.vehicle_model FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS vehicle_model,
   (SELECT c.vehicle_plate FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_outbound' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS vehicle_plate,
-  (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_return' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS return_driver_name
+  (SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='driver_return' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1) AS return_driver_name,
+  COALESCE((SELECT c.name FROM assignments a JOIN contacts c ON c.id=a.contact_id WHERE a.booking_id=b.id AND a.role='cash_collector' AND a.status!='cancelled' ORDER BY a.created_at DESC LIMIT 1),(SELECT c.name FROM contacts c WHERE c.id=b.cash_collector_contact_id LIMIT 1)) AS cash_collector_name
   FROM bookings b WHERE b.service_date>=? AND b.status!='cancelled' ORDER BY b.service_date ASC,COALESCE(b.pickup_time,b.start_time,'99:99') ASC,b.created_at ASC LIMIT 300`, [from]);
   return { today: localDate(0), tomorrow: localDate(1), results: rows };
 }
@@ -244,8 +296,9 @@ async function portalApi(request, env, session) {
   if (path === "/api/parse" && request.method === "POST") {
     const body = await readJson(request);
     if (!body?.text) return json({ error: "text_required" }, 400);
-    const result = parseQuickBooking(body.text);
-    const duplicate = await findDuplicate(db, result);
+    const parsed = parseQuickBooking(body.text);
+    const duplicate = await findDuplicate(db, parsed);
+    const result = mergeExistingBooking(parsed, duplicate);
     return json({ result, duplicate });
   }
   if (path === "/api/confirm" && request.method === "POST") {
@@ -265,18 +318,20 @@ async function portalApi(request, env, session) {
       end_time:String(body.end_time||"").trim()||null,
       pickup_time:String(body.pickup_time||"").trim()||null,
       pickup_location:String(body.pickup_location||"").trim()||null,
+      total_amount:Number(body.total_amount||0)||null,
+      currency:String(body.currency||"VND").trim()||"VND",
       notes:String(body.notes||"").trim()||null,
       source_text:String(body.source_text||"").trim()||null
     };
     let bookingId, action;
     if (existing) {
       bookingId = existing.id;
-      await db.prepare(`UPDATE bookings SET service_date=?,tour_type=?,guests=?,representative=?,phone=?,nationality=?,start_time=?,end_time=?,pickup_time=?,pickup_location=?,notes=?,source_text=?,status=CASE WHEN status IN ('inquiry','hold') THEN 'confirmed' ELSE status END,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(values.service_date,values.tour_type,values.guests,values.representative,values.phone,values.nationality,values.start_time,values.end_time,values.pickup_time,values.pickup_location,values.notes,values.source_text,bookingId).run();
+      await db.prepare(`UPDATE bookings SET service_date=?,tour_type=?,guests=?,representative=?,phone=?,nationality=?,start_time=?,end_time=?,pickup_time=?,pickup_location=?,total_amount=?,currency=?,notes=?,source_text=?,status=CASE WHEN status IN ('inquiry','hold') THEN 'confirmed' ELSE status END,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(values.service_date,values.tour_type,values.guests,values.representative,values.phone,values.nationality,values.start_time,values.end_time,values.pickup_time,values.pickup_location,values.total_amount,values.currency,values.notes,values.source_text,bookingId).run();
       action = "updated";
       await addBookingEvent(db, bookingId, actor, "portal_updated", "Booking được cập nhật từ nội dung dán vào.");
     } else {
       bookingId = id("bk");
-      await db.prepare(`INSERT INTO bookings(id,booking_code,status,service_date,tour_type,guests,representative,phone,nationality,start_time,end_time,pickup_time,pickup_location,notes,source_text,owner_name) VALUES(?,?,'confirmed',?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(bookingId,bookingCode(),values.service_date,values.tour_type,values.guests,values.representative,values.phone,values.nationality,values.start_time,values.end_time,values.pickup_time,values.pickup_location,values.notes,values.source_text,actor).run();
+      await db.prepare(`INSERT INTO bookings(id,booking_code,status,service_date,tour_type,guests,representative,phone,nationality,start_time,end_time,pickup_time,pickup_location,total_amount,currency,notes,source_text,owner_name) VALUES(?,?,'confirmed',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(bookingId,bookingCode(),values.service_date,values.tour_type,values.guests,values.representative,values.phone,values.nationality,values.start_time,values.end_time,values.pickup_time,values.pickup_location,values.total_amount,values.currency,values.notes,values.source_text,actor).run();
       action = "created";
       await addBookingEvent(db, bookingId, actor, "portal_created", "Booking được tạo từ nội dung dán vào.");
     }
