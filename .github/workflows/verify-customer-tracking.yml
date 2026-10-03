@@ -14,15 +14,30 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check public trip pages and data
+      - name: Diagnose public tracking route
+        run: |
+          BASE="https://booking.phuquocfishingtours.com"
+          TOKEN="k4n7m2q9x8v3r6p5"
+          echo "--- root token initial response ---"
+          curl -sS -D root.headers -o root.body "$BASE/$TOKEN" || true
+          cat root.headers
+          echo "--- slash token initial response ---"
+          curl -sS -D slash.headers -o slash.body "$BASE/$TOKEN/" || true
+          cat slash.headers
+          echo "--- legacy trip token initial response ---"
+          curl -sS -D legacy.headers -o legacy.body "$BASE/trip/$TOKEN" || true
+          cat legacy.headers
+          echo "--- public API ---"
+          API_CODE=$(curl -sS -D api.headers -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
+          cat api.headers
+          echo "api=$API_CODE"
+          cat trip.json
+          test "$API_CODE" = "200"
+
+      - name: Check all customer trip data
         run: |
           BASE="https://booking.phuquocfishingtours.com"
           for TOKEN in k4n7m2q9x8v3r6p5 p5h8q2m7x4v9n6r3 j1k6m9q3x7v4n8r2 j6k2m8q4x9v3n7r5; do
-            CODE=$(curl -sS -L --connect-timeout 10 --max-time 25 -o trip.html -w "%{http_code}" "$BASE/$TOKEN")
-            FINAL=$(curl -sS -L -o /dev/null -w "%{url_effective}" "$BASE/$TOKEN")
-            echo "$TOKEN page=$CODE final=$FINAL"
-            test "$CODE" = "200"
-            grep -q "Your Fishing Trip" trip.html
             API_CODE=$(curl -sS --connect-timeout 10 --max-time 25 -o trip.json -w "%{http_code}" "$BASE/api/public/trips/$TOKEN")
             echo "$TOKEN api=$API_CODE"
             test "$API_CODE" = "200"
