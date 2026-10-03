@@ -1,0 +1,62 @@
+name: Fix Fishing DNS Path
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-fishing-dns.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ROOT_DOMAIN: jotrip.vn
+  CUSTOM_DOMAIN: fishing.jotrip.vn
+  PAGES_TARGET: jotrip-fishing-ops.pages.dev
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Locate zone and set DNS-only CNAME
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          curl -sS -G -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            --data-urlencode "name=$ROOT_DOMAIN" \
+            --data-urlencode "account.id=$CLOUDFLARE_ACCOUNT_ID" \
+            "https://api.cloudflare.com/client/v4/zones" > zone.json
+          ZONE_ID=$(node -e 'const x=require("./zone.json"); const z=(x.result||[]).find(v=>v.name===process.env.ROOT_DOMAIN); if(z) process.stdout.write(z.id||"")')
+          test -n "$ZONE_ID" || { cat zone.json; exit 1; }
+          DNS_API="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records"
+          curl -sS -G -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            --data-urlencode "type=CNAME" --data-urlencode "name=$CUSTOM_DOMAIN" "$DNS_API" > dns.json
+          REC_ID=$(node -e 'const x=require("./dns.json"); const r=(x.result||[])[0]; if(r) process.stdout.write(r.id||"")')
+          test -n "$REC_ID" || { cat dns.json; exit 1; }
+          node -e 'require("fs").writeFileSync("payload.json",JSON.stringify({type:"CNAME",name:process.env.CUSTOM_DOMAIN,content:process.env.PAGES_TARGET,ttl:1,proxied:false}))'
+          CODE=$(curl -sS -o result.json -w "%{http_code}" -X PUT \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            --data-binary @payload.json "$DNS_API/$REC_ID")
+          cat result.json
+          test "$CODE" = "200" || exit 1
+          node -e 'const x=require("./result.json"); if(!x.success || x.result.proxied!==false || x.result.content!==process.env.PAGES_TARGET) process.exit(1)'
+
+      - name: Verify custom domain without zone proxy
+        run: |
+          sleep 5
+          echo "DNS:"
+          getent ahosts "$CUSTOM_DOMAIN" || true
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
+          for i in 1 2 3 4 5; do
+            RESULT=$(curl -sS -L --max-redirs 5 --connect-timeout 10 --max-time 25 -o body.html -w 'code=%{http_code} redirects=%{num_redirects} effective=%{url_effective}' -A "$UA" "https://$CUSTOM_DOMAIN/" || true)
+            echo "$RESULT"
+            if echo "$RESULT" | grep -q 'code=200' && echo "$RESULT" | grep -q 'redirects=0'; then break; fi
+            sleep 4
+          done
+          echo "$RESULT" | grep -q 'code=200' || exit 1
+          echo "$RESULT" | grep -q 'redirects=0' || exit 1
+          grep -Eq 'Fishing Ops|Lịch điều hành' body.html || { head -c 800 body.html; exit 1; }
