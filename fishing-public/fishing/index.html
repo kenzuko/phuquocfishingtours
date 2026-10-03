@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Fishing Ops - Phu Quoc Fishing Tours</title>
+  <link rel="stylesheet" href="/fishing/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">PHU QUOC FISHING TOURS</div>
+      <h1>Fishing Ops</h1>
+      <p>Dán nội dung, kiểm tra rồi xác nhận. Lịch vận hành cập nhật chung với Fishing Desk.</p>
+    </div>
+    <div class="top-actions">
+      <button class="ghost" id="refreshBtn" type="button">Làm mới lịch</button>
+      <form method="post" action="/fishing/auth/logout">
+        <button class="ghost" type="submit">Thoát</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="composer card">
+      <div class="section-head">
+        <div>
+          <span class="step">01</span>
+          <h2>Dán nội dung booking</h2>
+        </div>
+        <span class="hint">Tin nhắn, danh sách hoặc booking chi tiết đều được</span>
+      </div>
+      <textarea id="sourceText" rows="7" placeholder="Ví dụ:\n05/10/2026 Sáng - Phong (3NL)\nHoặc dán nguyên nội dung booking từ Zalo / Messenger"></textarea>
+      <div class="composer-actions">
+        <button class="primary" id="parseBtn" type="button">Đọc nội dung</button>
+        <button class="ghost" id="clearBtn" type="button">Xoá</button>
+      </div>
+      <p class="micro">Hệ thống chỉ lưu sau khi bạn kiểm tra và bấm Xác nhận.</p>
+    </section>
+
+    <section class="preview card hidden" id="previewCard">
+      <div class="section-head">
+        <div>
+          <span class="step">02</span>
+          <h2>Kiểm tra thông tin</h2>
+        </div>
+        <span class="state" id="matchState">Booking mới</span>
+      </div>
+
+      <div class="duplicate hidden" id="duplicateBox"></div>
+
+      <div class="form-grid">
+        <label>Ngày tour<input id="service_date" type="date"></label>
+        <label>Tour<input id="tour_type" value="Big Fishing"></label>
+        <label>Tên khách<input id="representative" placeholder="Tên đại diện"></label>
+        <label>Số khách<input id="guests" type="number" min="1" inputmode="numeric"></label>
+        <label>Quốc tịch<input id="nationality" placeholder="Nga, Hàn Quốc..."></label>
+        <label>Điện thoại<input id="phone" inputmode="tel"></label>
+        <label>Giờ bắt đầu<input id="start_time" type="time"></label>
+        <label>Giờ kết thúc<input id="end_time" type="time"></label>
+        <label>Giờ đón<input id="pickup_time" type="time"></label>
+        <label class="wide">Điểm đón<input id="pickup_location" placeholder="Khách sạn / địa điểm"></label>
+        <label class="wide">Ghi chú<textarea id="notes" rows="3" placeholder="Yêu cầu đặc biệt nếu có"></textarea></label>
+      </div>
+
+      <div class="confirm-row">
+        <div class="confirm-copy">
+          <strong id="confirmTitle">Kiểm tra lại trước khi lưu</strong>
+          <span id="confirmSubtitle">Có thể sửa trực tiếp các ô bên trên.</span>
+        </div>
+        <button class="primary" id="confirmBtn" type="button">Xác nhận lưu</button>
+      </div>
+    </section>
+
+    <section class="schedule card">
+      <div class="section-head schedule-head">
+        <div>
+          <span class="step">03</span>
+          <h2>Lịch Fishing</h2>
+        </div>
+        <span class="hint" id="lastUpdated">Đang tải...</span>
+      </div>
+
+      <div id="scheduleLoading" class="empty">Đang tải lịch...</div>
+      <div id="scheduleError" class="empty hidden"></div>
+      <div id="scheduleSections" class="schedule-sections hidden">
+        <section>
+          <h3>Hôm nay <span id="todayDate"></span></h3>
+          <div class="trip-list" id="todayTrips"></div>
+        </section>
+        <section>
+          <h3>Ngày mai <span id="tomorrowDate"></span></h3>
+          <div class="trip-list" id="tomorrowTrips"></div>
+        </section>
+        <section>
+          <h3>Sắp tới</h3>
+          <div class="trip-list" id="upcomingTrips"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast hidden" id="toast" role="status"></div>
+  <script type="module" src="/fishing/app.js"></script>
+</body>
+</html>
